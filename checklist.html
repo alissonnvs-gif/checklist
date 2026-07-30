@@ -2322,17 +2322,21 @@
   }
 
   function pushOneToNotion(item, payload, fp) {
+    console.log("[sync-debug] pushOneToNotion firing for", item.id, payload);
     fetch(SYNC_API_BASE + "/api/schedule", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-App-Key": SYNC_APP_KEY },
       body: JSON.stringify(payload)
     }).then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
       .then(function (data) {
+        console.log("[sync-debug] pushOneToNotion SUCCESS for", item.id, data);
         item.notionPageId = data.task.notionPageId;
         state.syncMeta[item.id] = { fp: fp, notionPageId: data.task.notionPageId, remoteUpdatedAt: data.task.updatedAt };
         save(true);
       })
-      .catch(function () {});
+      .catch(function (err) {
+        console.log("[sync-debug] pushOneToNotion FAILED for", item.id, err);
+      });
   }
 
   function runSyncPush() {
@@ -2343,6 +2347,7 @@
       var payload = taskToSyncPayload(entry.catId, entry.kind, entry.item);
       var fp = syncFingerprint(payload);
       var meta = state.syncMeta[entry.item.id];
+      console.log("[sync-debug] runSyncPush eval", entry.item.id, "hasMeta=", !!meta, "metaFp=", meta && meta.fp, "curFp=", fp, "skip=", !!(meta && meta.fp === fp));
       if (meta && meta.fp === fp) return;
       pushOneToNotion(entry.item, payload, fp);
     });
@@ -2417,6 +2422,7 @@
       } else {
         // Row was created directly in Notion with no AppId yet — leave syncMeta unset so
         // the next push actually fires and stamps AppId back onto this page.
+        console.log("[sync-debug] adopted new item without appId, scheduling push", newId);
         scheduleSyncPush();
       }
       return true;
