@@ -7,6 +7,14 @@
 <link rel="icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Checklist">
+<script>
+  window.__dbg = [];
+  var __origLog = console.log;
+  console.log = function () {
+    window.__dbg.push(Array.prototype.slice.call(arguments).map(String).join(" "));
+    __origLog.apply(console, arguments);
+  };
+</script>
 <style>
   :root {
     --bg: #eef0f5;
