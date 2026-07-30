@@ -1,4 +1,12 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Checklist — Blue Crab / LOOM / LOOM Store / Pessoal</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4d5fe0">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Checklist">
 <style>
   :root {
     --bg: #eef0f5;
@@ -2285,5 +2293,11 @@
   render();
   if (hardReset) showToast("Tudo limpo — comece do zero.");
   else if (seedChanged) showToast("Cronograma atualizado.");
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("./sw.js").catch(function () {});
+    });
+  }
 })();
 </script>
