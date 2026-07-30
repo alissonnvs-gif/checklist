@@ -2393,10 +2393,16 @@
         newItem = { id: newId, title: remote.title, note: remote.note || "", days: (remote.days || []).slice(), doneMap: {}, createdAt: Date.now(), notionPageId: remote.notionPageId };
         bucket.schedule.push(newItem);
       }
-      var fp = syncFingerprint(taskToSyncPayload(remote.category, remote.kind, newItem));
-      state.syncMeta[newId] = { fp: fp, notionPageId: remote.notionPageId, remoteUpdatedAt: remote.updatedAt };
       if (state.syncKnownIds.indexOf(newId) === -1) state.syncKnownIds.push(newId);
-      if (!appId) scheduleSyncPush();
+      if (appId) {
+        // Already linked to this Notion row (e.g. synced from another device) — no write-back needed.
+        var fp = syncFingerprint(taskToSyncPayload(remote.category, remote.kind, newItem));
+        state.syncMeta[newId] = { fp: fp, notionPageId: remote.notionPageId, remoteUpdatedAt: remote.updatedAt };
+      } else {
+        // Row was created directly in Notion with no AppId yet — leave syncMeta unset so
+        // the next push actually fires and stamps AppId back onto this page.
+        scheduleSyncPush();
+      }
       return true;
     }
 
