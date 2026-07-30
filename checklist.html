@@ -1137,6 +1137,8 @@
     if (!parsed.viewingWeek) parsed.viewingWeek = mondayOf(new Date());
     if (typeof parsed.seedVersion !== "number") parsed.seedVersion = 0;
     if (typeof parsed.hardResetVersion !== "number") parsed.hardResetVersion = 0;
+    if (!parsed.syncMeta) parsed.syncMeta = {};
+    if (!parsed.syncKnownIds) parsed.syncKnownIds = [];
     return parsed;
   }
 
@@ -1186,14 +1188,15 @@
     return ensureShape(parsed);
   }
 
-  function save() {
+  function save(skipSync) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (!skipSync) scheduleSyncPush();
   }
 
   var state = load();
   var hardReset = applyHardReset(state);
   var seedChanged = applySeedUpdates(state);
-  if (hardReset || seedChanged) save();
+  if (hardReset || seedChanged) save(true);
 
   var pendingDays = { blueCrab: [], loom: [], loomStore: [], pessoal: [] };
   var pendingOnceDay = { blueCrab: [], loom: [], loomStore: [], pessoal: [] };
@@ -2281,6 +2284,155 @@
     return block;
   }
 
+  // ---- Notion sync (via the checklist-sync proxy) ----
+  // Only the schedule DEFINITION (title/note/category/days) and the "done"
+  // flag on one-off (Resolver) tasks are synced. The per-week doneMap
+  // history for recurring Cronograma tasks is never read or written here —
+  // it stays local-only, exactly as before this feature existed.
+  var SYNC_API_BASE = "https://checklist-sync-eta.vercel.app";
+  var SYNC_APP_KEY = "092c4172262678f0a600ba069d3026d0157e449f";
+  var CATEGORY_VALID = { blueCrab: 1, loom: 1, loomStore: 1, pessoal: 1 };
+  var syncPushTimer = null;
+
+  function taskToSyncPayload(catId, kind, item) {
+    return {
+      appId: item.id,
+      notionPageId: item.notionPageId || undefined,
+      category: catId,
+      kind: kind,
+      title: kind === "schedule" ? item.title : item.text,
+      note: kind === "schedule" ? (item.note || "") : "",
+      days: kind === "schedule" ? item.days.slice() : ((item.day !== undefined && item.day !== null) ? [item.day] : []),
+      done: kind === "once" ? !!item.done : false,
+      archived: false
+    };
+  }
+
+  function syncFingerprint(payload) {
+    return JSON.stringify([payload.category, payload.kind, payload.title, payload.note, payload.days.slice().sort(), payload.done]);
+  }
+
+  function collectAllSyncableItems() {
+    var out = [];
+    CATEGORIES.forEach(function (cat) {
+      state[cat.id].schedule.forEach(function (it) { out.push({ catId: cat.id, kind: "schedule", item: it }); });
+      state[cat.id].projects.forEach(function (it) { out.push({ catId: cat.id, kind: "once", item: it }); });
+    });
+    return out;
+  }
+
+  function pushOneToNotion(item, payload, fp) {
+    fetch(SYNC_API_BASE + "/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-App-Key": SYNC_APP_KEY },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+      .then(function (data) {
+        item.notionPageId = data.task.notionPageId;
+        state.syncMeta[item.id] = { fp: fp, notionPageId: data.task.notionPageId, remoteUpdatedAt: data.task.updatedAt };
+        save(true);
+      })
+      .catch(function () {});
+  }
+
+  function runSyncPush() {
+    var all = collectAllSyncableItems();
+    var currentIds = {};
+    all.forEach(function (entry) {
+      currentIds[entry.item.id] = true;
+      var payload = taskToSyncPayload(entry.catId, entry.kind, entry.item);
+      var fp = syncFingerprint(payload);
+      var meta = state.syncMeta[entry.item.id];
+      if (meta && meta.fp === fp) return;
+      pushOneToNotion(entry.item, payload, fp);
+    });
+
+    state.syncKnownIds.filter(function (id) { return !currentIds[id]; }).forEach(function (id) {
+      var meta = state.syncMeta[id];
+      fetch(SYNC_API_BASE + "/api/schedule/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-App-Key": SYNC_APP_KEY },
+        body: JSON.stringify({ appId: id, notionPageId: meta && meta.notionPageId })
+      }).catch(function () {});
+      delete state.syncMeta[id];
+    });
+    state.syncKnownIds = Object.keys(currentIds);
+    save(true);
+  }
+
+  function scheduleSyncPush() {
+    if (!SYNC_API_BASE) return;
+    window.clearTimeout(syncPushTimer);
+    syncPushTimer = window.setTimeout(runSyncPush, 800);
+  }
+
+  function findLocalSyncItem(id) {
+    for (var i = 0; i < CATEGORIES.length; i++) {
+      var cat = CATEGORIES[i];
+      var s = state[cat.id].schedule.filter(function (it) { return it.id === id; })[0];
+      if (s) return { catId: cat.id, kind: "schedule", item: s };
+      var p = state[cat.id].projects.filter(function (it) { return it.id === id; })[0];
+      if (p) return { catId: cat.id, kind: "once", item: p };
+    }
+    return null;
+  }
+
+  function applyRemoteTask(remote) {
+    if (!remote.category || !CATEGORY_VALID[remote.category]) return false;
+    var appId = remote.appId;
+    var local = appId ? findLocalSyncItem(appId) : null;
+
+    if (!local) {
+      var newId = appId || uid();
+      var bucket = state[remote.category];
+      var newItem;
+      if (remote.kind === "once") {
+        newItem = { id: newId, text: remote.title, day: (remote.days && remote.days[0] !== undefined) ? remote.days[0] : null, done: !!remote.done, createdAt: Date.now(), notionPageId: remote.notionPageId };
+        bucket.projects.push(newItem);
+      } else {
+        newItem = { id: newId, title: remote.title, note: remote.note || "", days: (remote.days || []).slice(), doneMap: {}, createdAt: Date.now(), notionPageId: remote.notionPageId };
+        bucket.schedule.push(newItem);
+      }
+      var fp = syncFingerprint(taskToSyncPayload(remote.category, remote.kind, newItem));
+      state.syncMeta[newId] = { fp: fp, notionPageId: remote.notionPageId, remoteUpdatedAt: remote.updatedAt };
+      if (state.syncKnownIds.indexOf(newId) === -1) state.syncKnownIds.push(newId);
+      if (!appId) scheduleSyncPush();
+      return true;
+    }
+
+    var meta = state.syncMeta[local.item.id];
+    if (meta && meta.remoteUpdatedAt === remote.updatedAt) return false;
+    if (local.kind !== remote.kind || local.catId !== remote.category) return false;
+
+    if (remote.kind === "once") {
+      local.item.text = remote.title;
+      local.item.day = (remote.days && remote.days[0] !== undefined) ? remote.days[0] : null;
+      local.item.done = !!remote.done;
+    } else {
+      local.item.title = remote.title;
+      local.item.note = remote.note || "";
+      local.item.days = (remote.days || []).slice();
+    }
+    local.item.notionPageId = remote.notionPageId;
+    var fp2 = syncFingerprint(taskToSyncPayload(local.catId, local.kind, local.item));
+    state.syncMeta[local.item.id] = { fp: fp2, notionPageId: remote.notionPageId, remoteUpdatedAt: remote.updatedAt };
+    return true;
+  }
+
+  function syncPull() {
+    if (!SYNC_API_BASE) return;
+    fetch(SYNC_API_BASE + "/api/schedule", { headers: { "X-App-Key": SYNC_APP_KEY } })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+      .then(function (data) {
+        var changed = false;
+        (data.tasks || []).forEach(function (remote) {
+          if (applyRemoteTask(remote)) changed = true;
+        });
+        if (changed) { save(true); render(); }
+      })
+      .catch(function () {});
+  }
+
   function render() {
     renderTabs();
     var cat = CATEGORIES.filter(function (c) { return c.id === state.activeTab; })[0];
@@ -2296,6 +2448,7 @@
   render();
   if (hardReset) showToast("Tudo limpo — comece do zero.");
   else if (seedChanged) showToast("Cronograma atualizado.");
+  syncPull();
 
   var swipeContainer = document.querySelector(".page");
   var touchStartX = null;
