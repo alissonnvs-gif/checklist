@@ -2377,10 +2377,26 @@
     return null;
   }
 
+  function findLocalByNotionPageId(pageId) {
+    if (!pageId) return null;
+    for (var i = 0; i < CATEGORIES.length; i++) {
+      var cat = CATEGORIES[i];
+      var s = state[cat.id].schedule.filter(function (it) { return it.notionPageId === pageId; })[0];
+      if (s) return { catId: cat.id, kind: "schedule", item: s };
+      var p = state[cat.id].projects.filter(function (it) { return it.notionPageId === pageId; })[0];
+      if (p) return { catId: cat.id, kind: "once", item: p };
+    }
+    return null;
+  }
+
   function applyRemoteTask(remote) {
     if (!remote.category || !CATEGORY_VALID[remote.category]) return false;
     var appId = remote.appId;
+    // Match by appId first; fall back to notionPageId so a row we already
+    // adopted locally (but whose AppId write-back hasn't landed yet) isn't
+    // re-adopted as a duplicate on every subsequent pull.
     var local = appId ? findLocalSyncItem(appId) : null;
+    if (!local) local = findLocalByNotionPageId(remote.notionPageId);
 
     if (!local) {
       var newId = appId || uid();
@@ -2420,8 +2436,14 @@
       local.item.days = (remote.days || []).slice();
     }
     local.item.notionPageId = remote.notionPageId;
-    var fp2 = syncFingerprint(taskToSyncPayload(local.catId, local.kind, local.item));
-    state.syncMeta[local.item.id] = { fp: fp2, notionPageId: remote.notionPageId, remoteUpdatedAt: remote.updatedAt };
+    if (appId) {
+      var fp2 = syncFingerprint(taskToSyncPayload(local.catId, local.kind, local.item));
+      state.syncMeta[local.item.id] = { fp: fp2, notionPageId: remote.notionPageId, remoteUpdatedAt: remote.updatedAt };
+    } else {
+      // Matched via notionPageId only — this Notion row still has no AppId, so
+      // leave syncMeta unset and let the next push stamp it back.
+      scheduleSyncPush();
+    }
     return true;
   }
 
