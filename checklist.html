@@ -157,7 +157,10 @@
     gap: 0.5rem;
     margin-bottom: 1.25rem;
     overflow-x: auto;
+    scrollbar-width: none;
   }
+
+  nav.tabs::-webkit-scrollbar { display: none; }
 
   .tab-btn {
     appearance: none;
@@ -2293,6 +2296,45 @@
   render();
   if (hardReset) showToast("Tudo limpo — comece do zero.");
   else if (seedChanged) showToast("Cronograma atualizado.");
+
+  var swipeContainer = document.querySelector(".page");
+  var touchStartX = null;
+  var touchStartY = null;
+  var touchExcluded = false;
+
+  function isSwipeExcluded(target) {
+    return !!(target.closest && (
+      target.closest(".day-strip-days") ||
+      target.closest("nav.tabs") ||
+      target.closest("input") ||
+      target.closest("textarea")
+    ));
+  }
+
+  swipeContainer.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) { touchStartX = null; return; }
+    touchExcluded = isSwipeExcluded(e.target);
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  swipeContainer.addEventListener("touchend", function (e) {
+    if (touchStartX === null || touchExcluded) { touchStartX = null; return; }
+    var endX = e.changedTouches[0].clientX;
+    var endY = e.changedTouches[0].clientY;
+    var dx = endX - touchStartX;
+    var dy = endY - touchStartY;
+    touchStartX = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    var ids = CATEGORIES.map(function (c) { return c.id; });
+    var idx = ids.indexOf(state.activeTab);
+    var nextIdx = dx < 0 ? idx + 1 : idx - 1;
+    if (nextIdx < 0 || nextIdx >= CATEGORIES.length) return;
+    state.activeTab = CATEGORIES[nextIdx].id;
+    editingId = null;
+    save();
+    render();
+  }, { passive: true });
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () {
