@@ -1072,8 +1072,8 @@
 
   function mkProjectTask(def) {
     if (typeof def === "string") def = { text: def };
-    var day = (def.day !== undefined && def.day !== null) ? def.day : null;
-    return { id: def.id || uid(), text: def.text, day: day, done: false, createdAt: Date.now() };
+    var date = (def.date !== undefined && def.date !== null) ? def.date : null;
+    return { id: def.id || uid(), text: def.text, date: date, done: false, createdAt: Date.now() };
   }
 
   function mondayOf(date) {
@@ -1083,6 +1083,17 @@
     d.setDate(d.getDate() + diff);
     d.setHours(0, 0, 0, 0);
     return d.toISOString().slice(0, 10);
+  }
+
+  // Given a "YYYY-MM-DD" string, returns { weekday, monday } (weekday = JS
+  // getDay() convention, monday = the ISO date of that week's Monday), or
+  // null if dateStr is falsy. Centralizes the date math used to place a
+  // dated one-off task into the right day-group of the right week.
+  function dateInfo(dateStr) {
+    if (!dateStr) return null;
+    var d = new Date(dateStr + "T00:00:00");
+    if (isNaN(d.getTime())) return null;
+    return { weekday: d.getDay(), monday: mondayOf(d) };
   }
 
   function addWeeks(mondayISO, delta) {
@@ -1132,7 +1143,10 @@
       var bucket = parsed[cat.id];
       if (!bucket.schedule) bucket.schedule = [];
       if (!bucket.projects) bucket.projects = [];
-      bucket.projects.forEach(function (t) { if (t.day === undefined) t.day = null; });
+      bucket.projects.forEach(function (t) {
+        if (t.date === undefined) t.date = null;
+        if (t.day !== undefined) delete t.day; // legacy weekday-only field, can't map to a real date
+      });
     });
     if (!parsed.viewingWeek) parsed.viewingWeek = mondayOf(new Date());
     if (typeof parsed.seedVersion !== "number") parsed.seedVersion = 0;
@@ -1199,11 +1213,11 @@
   if (hardReset || seedChanged) save(true);
 
   var pendingDays = { blueCrab: [], loom: [], loomStore: [], pessoal: [] };
-  var pendingOnceDay = { blueCrab: [], loom: [], loomStore: [], pessoal: [] };
+  var pendingOnceDate = { blueCrab: "", loom: "", loomStore: "", pessoal: "" };
   var editingId = null;
   var editModeTemp = "recurring";
   var editDaysTemp = [];
-  var editOnceDayTemp = [];
+  var editOnceDateTemp = "";
 
   var tabsEl = document.getElementById("tabs");
   var heroEl = document.getElementById("heroContainer");
@@ -1212,6 +1226,7 @@
   var toastEl = document.getElementById("toast");
   var todayWeekday = new Date().getDay();
   var currentMonday = mondayOf(new Date());
+  var todayISO = new Date().toISOString().slice(0, 10);
 
   todayEl.textContent = new Date().toLocaleDateString("pt-BR", {
     weekday: "long", day: "2-digit", month: "long"
@@ -1340,7 +1355,10 @@
 
   function isDayComplete(catId, weekday, monday) {
     var scheduled = state[catId].schedule.filter(function (it) { return it.days.indexOf(weekday) !== -1; });
-    var once = (monday === currentMonday) ? state[catId].projects.filter(function (t) { return t.day === weekday; }) : [];
+    var once = state[catId].projects.filter(function (t) {
+      var info = dateInfo(t.date);
+      return info && info.weekday === weekday && info.monday === monday;
+    });
     var all = scheduled.concat(once);
     if (all.length === 0) return false;
     return all.every(function (it) {
@@ -1358,7 +1376,10 @@
       var weekday = cursor.getDay();
       var monday = mondayOf(cursor);
       var scheduled = state[catId].schedule.filter(function (it) { return it.days.indexOf(weekday) !== -1; });
-      var once = (monday === currentMonday) ? state[catId].projects.filter(function (t) { return t.day === weekday; }) : [];
+      var once = state[catId].projects.filter(function (t) {
+        var info = dateInfo(t.date);
+        return info && info.weekday === weekday && info.monday === monday;
+      });
       var hasTasks = scheduled.length + once.length > 0;
       if (!hasTasks) {
         cursor.setDate(cursor.getDate() - 1);
@@ -1391,7 +1412,7 @@
     hero.appendChild(title);
 
     var todayScheduled = state[cat.id].schedule.filter(function (it) { return it.days.indexOf(todayWeekday) !== -1; });
-    var todayOnce = state[cat.id].projects.filter(function (t) { return t.day === todayWeekday; });
+    var todayOnce = state[cat.id].projects.filter(function (t) { return t.date === todayISO; });
     var todayDone = 0;
     todayScheduled.forEach(function (it) {
       var wm = it.doneMap[currentMonday] || {};
@@ -1410,8 +1431,10 @@
 
     var items = state[cat.id].schedule;
     var projectsBucket = state[cat.id].projects;
-    var isCurrentWeek = state.viewingWeek === currentMonday;
-    var onceWithDay = isCurrentWeek ? projectsBucket.filter(function (t) { return t.day !== undefined && t.day !== null; }) : [];
+    var onceWithDay = projectsBucket.filter(function (t) {
+      var info = dateInfo(t.date);
+      return info && info.monday === state.viewingWeek;
+    });
     var total = 0, done = 0;
     items.forEach(function (it) {
       var wm = it.doneMap[state.viewingWeek] || {};
@@ -1596,10 +1619,17 @@
 
     var onceHint = document.createElement("div");
     onceHint.className = "block-sub";
-    onceHint.textContent = "Dia (opcional)";
-    var onceTogglesWrap = buildDayToggles(cat.color, pendingOnceDay[cat.id], true);
+    onceHint.textContent = "Data (opcional — sem data vai para Resolver)";
+    var onceDateInput = document.createElement("input");
+    onceDateInput.className = "edit-field";
+    onceDateInput.type = "date";
+    onceDateInput.style.setProperty("--cat-color", cat.color);
+    onceDateInput.value = pendingOnceDate[cat.id];
+    onceDateInput.addEventListener("change", function () {
+      pendingOnceDate[cat.id] = onceDateInput.value;
+    });
     onceFields.appendChild(onceHint);
-    onceFields.appendChild(onceTogglesWrap);
+    onceFields.appendChild(onceDateInput);
 
     recBtn.addEventListener("click", function () {
       mode = "recurring";
@@ -1633,9 +1663,8 @@
         state[cat.id].schedule.push(mkScheduleItem({ title: title, note: noteInput.value.trim(), days: days }));
         pendingDays[cat.id] = [];
       } else {
-        var day = pendingOnceDay[cat.id][0];
-        state[cat.id].projects.push(mkProjectTask({ text: title, day: day !== undefined ? day : null }));
-        pendingOnceDay[cat.id] = [];
+        state[cat.id].projects.push(mkProjectTask({ text: title, date: pendingOnceDate[cat.id] || null }));
+        pendingOnceDate[cat.id] = "";
       }
       save();
       render();
@@ -1699,7 +1728,7 @@
       editingId = item.id;
       editModeTemp = "recurring";
       editDaysTemp = item.days.slice();
-      editOnceDayTemp = [];
+      editOnceDateTemp = "";
       render();
     });
 
@@ -1737,9 +1766,12 @@
     check.style.setProperty("--cat-color", catColor);
     check.addEventListener("change", function () {
       item.done = check.checked;
-      if (check.checked && item.day === todayWeekday && isDayComplete(catId, item.day, currentMonday)) {
-        var streak = computeStreak(catId);
-        showToast("Dia completo — sequência de " + streak + (streak === 1 ? " dia." : " dias."));
+      if (check.checked && item.date === todayISO) {
+        var info = dateInfo(item.date);
+        if (info && isDayComplete(catId, info.weekday, currentMonday)) {
+          var streak = computeStreak(catId);
+          showToast("Dia completo — sequência de " + streak + (streak === 1 ? " dia." : " dias."));
+        }
       }
       save();
       render();
@@ -1763,7 +1795,7 @@
       editingId = item.id;
       editModeTemp = "once";
       editDaysTemp = [];
-      editOnceDayTemp = (item.day !== undefined && item.day !== null) ? [item.day] : [];
+      editOnceDateTemp = item.date || "";
       render();
     });
 
@@ -1836,10 +1868,17 @@
 
     var onceHint = document.createElement("div");
     onceHint.className = "block-sub";
-    onceHint.textContent = "Dia (opcional)";
-    var onceToggles = buildDayToggles(cat.color, editOnceDayTemp, true);
+    onceHint.textContent = "Data (opcional — sem data vai para Resolver)";
+    var onceDateInput = document.createElement("input");
+    onceDateInput.className = "edit-field";
+    onceDateInput.type = "date";
+    onceDateInput.style.setProperty("--cat-color", cat.color);
+    onceDateInput.value = editOnceDateTemp;
+    onceDateInput.addEventListener("change", function () {
+      editOnceDateTemp = onceDateInput.value;
+    });
     onceFields.appendChild(onceHint);
-    onceFields.appendChild(onceToggles);
+    onceFields.appendChild(onceDateInput);
 
     recBtn.addEventListener("click", function () {
       editModeTemp = "recurring";
@@ -1882,15 +1921,14 @@
           state[cat.id].schedule.push(mkScheduleItem({ title: title, note: noteInput.value.trim(), days: editDaysTemp }));
         }
       } else {
-        var onceDay = editOnceDayTemp[0];
-        onceDay = onceDay !== undefined ? onceDay : null;
+        var onceDate = editOnceDateTemp || null;
         if (kind === "project") {
           item.text = title;
-          item.day = onceDay;
+          item.date = onceDate;
         } else {
           var sIdx = state[cat.id].schedule.indexOf(item);
           if (sIdx >= 0) state[cat.id].schedule.splice(sIdx, 1);
-          state[cat.id].projects.push(mkProjectTask({ text: title, day: onceDay }));
+          state[cat.id].projects.push(mkProjectTask({ text: title, date: onceDate }));
         }
       }
       editingId = null;
@@ -1942,8 +1980,10 @@
     var cat = { id: catId, color: catColor };
     var items = state[catId].schedule;
     var projectsBucket = state[catId].projects;
-    var isCurrentWeek = state.viewingWeek === currentMonday;
-    var onceWithDay = isCurrentWeek ? projectsBucket.filter(function (t) { return t.day !== undefined && t.day !== null; }) : [];
+    var onceWithDay = projectsBucket.filter(function (t) {
+      var info = dateInfo(t.date);
+      return info && info.monday === state.viewingWeek;
+    });
 
     var block = document.createElement("section");
     block.className = "block";
@@ -1986,7 +2026,7 @@
 
     WEEK_ORDER.forEach(function (weekday) {
       var dayItems = items.filter(function (it) { return it.days.indexOf(weekday) !== -1; });
-      var dayOnceItems = onceWithDay.filter(function (t) { return t.day === weekday; });
+      var dayOnceItems = onceWithDay.filter(function (t) { return dateInfo(t.date).weekday === weekday; });
 
       var isRealToday = weekday === todayWeekday && state.viewingWeek === currentMonday;
 
@@ -2076,8 +2116,10 @@
   function summaryBlock(catId, catColor) {
     var items = state[catId].schedule;
     var projectsBucket = state[catId].projects;
-    var isCurrentWeek = state.viewingWeek === currentMonday;
-    var onceWithDay = isCurrentWeek ? projectsBucket.filter(function (t) { return t.day !== undefined && t.day !== null; }) : [];
+    var onceWithDay = projectsBucket.filter(function (t) {
+      var info = dateInfo(t.date);
+      return info && info.monday === state.viewingWeek;
+    });
     var cronoTotal = 0, cronoDone = 0;
     items.forEach(function (it) {
       var wm = it.doneMap[state.viewingWeek] || {};
@@ -2092,7 +2134,7 @@
     });
     var cronoPct = cronoTotal ? Math.round((cronoDone / cronoTotal) * 100) : 0;
 
-    var resolverBucket = projectsBucket.filter(function (t) { return t.day === undefined || t.day === null; });
+    var resolverBucket = projectsBucket.filter(function (t) { return t.date === undefined || t.date === null; });
     var resolverDone = resolverBucket.filter(function (t) { return t.done; }).length;
     var resolverTotal = resolverBucket.length;
     var resolverPct = resolverTotal ? Math.round((resolverDone / resolverTotal) * 100) : 0;
@@ -2127,7 +2169,7 @@
 
   function resolverBlock(catId, catColor) {
     var cat = { id: catId, color: catColor };
-    var bucket = state[catId].projects.filter(function (t) { return t.day === undefined || t.day === null; });
+    var bucket = state[catId].projects.filter(function (t) { return t.date === undefined || t.date === null; });
     var done = bucket.filter(function (t) { return t.done; }).length;
     var total = bucket.length;
     var pct = total ? Math.round((done / total) * 100) : 0;
@@ -2206,12 +2248,6 @@
       text.className = "task-text";
       text.textContent = task.text;
       main.appendChild(text);
-      if (task.day !== undefined && task.day !== null) {
-        var dayBadge = document.createElement("span");
-        dayBadge.className = "task-day-badge";
-        dayBadge.textContent = DAY_SHORT[task.day];
-        main.appendChild(dayBadge);
-      }
 
       var actions = document.createElement("div");
       actions.className = "task-actions";
@@ -2224,7 +2260,7 @@
         editingId = task.id;
         editModeTemp = "once";
         editDaysTemp = [];
-        editOnceDayTemp = (task.day !== undefined && task.day !== null) ? [task.day] : [];
+        editOnceDateTemp = task.date || "";
         render();
       });
 
@@ -2266,7 +2302,7 @@
     function commit() {
       var val = input.value.trim();
       if (!val) return;
-      state[catId].projects.push(mkProjectTask({ text: val, day: null }));
+      state[catId].projects.push(mkProjectTask({ text: val, date: null }));
       input.value = "";
       save();
       render();
@@ -2302,14 +2338,15 @@
       kind: kind,
       title: kind === "schedule" ? item.title : item.text,
       note: kind === "schedule" ? (item.note || "") : "",
-      days: kind === "schedule" ? item.days.slice() : ((item.day !== undefined && item.day !== null) ? [item.day] : []),
+      days: kind === "schedule" ? item.days.slice() : [],
+      date: kind === "once" ? (item.date || null) : null,
       done: kind === "once" ? !!item.done : false,
       archived: false
     };
   }
 
   function syncFingerprint(payload) {
-    return JSON.stringify([payload.category, payload.kind, payload.title, payload.note, payload.days.slice().sort(), payload.done]);
+    return JSON.stringify([payload.category, payload.kind, payload.title, payload.note, payload.days.slice().sort(), payload.date, payload.done]);
   }
 
   function collectAllSyncableItems() {
@@ -2403,7 +2440,7 @@
       var bucket = state[remote.category];
       var newItem;
       if (remote.kind === "once") {
-        newItem = { id: newId, text: remote.title, day: (remote.days && remote.days[0] !== undefined) ? remote.days[0] : null, done: !!remote.done, createdAt: Date.now(), notionPageId: remote.notionPageId };
+        newItem = { id: newId, text: remote.title, date: remote.date || null, done: !!remote.done, createdAt: Date.now(), notionPageId: remote.notionPageId };
         bucket.projects.push(newItem);
       } else {
         newItem = { id: newId, title: remote.title, note: remote.note || "", days: (remote.days || []).slice(), doneMap: {}, createdAt: Date.now(), notionPageId: remote.notionPageId };
@@ -2428,7 +2465,7 @@
 
     if (remote.kind === "once") {
       local.item.text = remote.title;
-      local.item.day = (remote.days && remote.days[0] !== undefined) ? remote.days[0] : null;
+      local.item.date = remote.date || null;
       local.item.done = !!remote.done;
     } else {
       local.item.title = remote.title;
