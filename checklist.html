@@ -1027,6 +1027,10 @@
     { id: "pessoal", label: "Pessoal", color: "var(--cat-pessoal)", color2: "var(--cat-pessoal-2)" }
   ];
 
+  // Synthetic tab id for the unified "Hoje" overview screen (not a real category).
+  var OVERVIEW_ID = "overview";
+  var OVERVIEW_DAYS = 7;
+
   // JS getDay() convention: 0=Dom, 1=Seg, ... 6=Sáb. Displayed Mon→Sun.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
   var DAY_LABEL = { 0: "Domingo", 1: "Segunda", 2: "Terça", 3: "Quarta", 4: "Quinta", 5: "Sexta", 6: "Sábado" };
@@ -1067,13 +1071,13 @@
   }
 
   function mkScheduleItem(def) {
-    return { id: def.id || uid(), title: def.title, note: def.note || "", days: def.days.slice(), doneMap: {}, createdAt: Date.now() };
+    return { id: def.id || uid(), title: def.title, note: def.note || "", days: def.days.slice(), time: def.time || "", doneMap: {}, createdAt: Date.now() };
   }
 
   function mkProjectTask(def) {
     if (typeof def === "string") def = { text: def };
     var date = (def.date !== undefined && def.date !== null) ? def.date : null;
-    return { id: def.id || uid(), text: def.text, date: date, done: false, createdAt: Date.now() };
+    return { id: def.id || uid(), text: def.text, date: date, time: def.time || "", done: false, createdAt: Date.now() };
   }
 
   function mondayOf(date) {
@@ -1143,9 +1147,13 @@
       var bucket = parsed[cat.id];
       if (!bucket.schedule) bucket.schedule = [];
       if (!bucket.projects) bucket.projects = [];
+      bucket.schedule.forEach(function (it) {
+        if (it.time === undefined) it.time = "";
+      });
       bucket.projects.forEach(function (t) {
         if (t.date === undefined) t.date = null;
         if (t.day !== undefined) delete t.day; // legacy weekday-only field, can't map to a real date
+        if (t.time === undefined) t.time = "";
       });
     });
     if (!parsed.viewingWeek) parsed.viewingWeek = mondayOf(new Date());
@@ -1153,6 +1161,10 @@
     if (typeof parsed.hardResetVersion !== "number") parsed.hardResetVersion = 0;
     if (!parsed.syncMeta) parsed.syncMeta = {};
     if (!parsed.syncKnownIds) parsed.syncKnownIds = [];
+    if (!parsed.overviewSeen) {
+      parsed.activeTab = OVERVIEW_ID;
+      parsed.overviewSeen = true;
+    }
     return parsed;
   }
 
@@ -1214,10 +1226,28 @@
 
   var pendingDays = { blueCrab: [], loom: [], loomStore: [], pessoal: [] };
   var pendingOnceDate = { blueCrab: "", loom: "", loomStore: "", pessoal: "" };
+  var pendingTime = { blueCrab: "", loom: "", loomStore: "", pessoal: "" };
   var editingId = null;
   var editModeTemp = "recurring";
   var editDaysTemp = [];
   var editOnceDateTemp = "";
+  var editTimeTemp = "";
+
+  function timeField(catColor, initialVal, onChange) {
+    var wrap = document.createElement("div");
+    var hint = document.createElement("div");
+    hint.className = "block-sub";
+    hint.textContent = "Horário (opcional)";
+    var input = document.createElement("input");
+    input.className = "edit-field";
+    input.type = "time";
+    input.style.setProperty("--cat-color", catColor);
+    input.value = initialVal || "";
+    input.addEventListener("change", function () { onChange(input.value); });
+    wrap.appendChild(hint);
+    wrap.appendChild(input);
+    return wrap;
+  }
 
   var tabsEl = document.getElementById("tabs");
   var heroEl = document.getElementById("heroContainer");
@@ -1243,6 +1273,24 @@
 
   function renderTabs() {
     tabsEl.innerHTML = "";
+
+    var overviewBtn = document.createElement("button");
+    overviewBtn.className = "tab-btn";
+    overviewBtn.type = "button";
+    overviewBtn.setAttribute("data-active", String(state.activeTab === OVERVIEW_ID));
+    var overviewDot = document.createElement("span");
+    overviewDot.className = "dot";
+    overviewDot.style.background = "conic-gradient(var(--cat-bluecrab), var(--cat-loom), var(--cat-loomstore), var(--cat-pessoal))";
+    overviewBtn.appendChild(overviewDot);
+    overviewBtn.appendChild(document.createTextNode("Hoje"));
+    overviewBtn.addEventListener("click", function () {
+      state.activeTab = OVERVIEW_ID;
+      editingId = null;
+      save();
+      render();
+    });
+    tabsEl.appendChild(overviewBtn);
+
     CATEGORIES.forEach(function (cat) {
       var btn = document.createElement("button");
       btn.className = "tab-btn";
@@ -1612,6 +1660,7 @@
 
     recurringFields.appendChild(noteInput);
     recurringFields.appendChild(togglesWrap);
+    recurringFields.appendChild(timeField(cat.color, pendingTime[cat.id], function (v) { pendingTime[cat.id] = v; }));
 
     var onceFields = document.createElement("div");
     onceFields.className = "new-task-recurring-fields";
@@ -1630,6 +1679,7 @@
     });
     onceFields.appendChild(onceHint);
     onceFields.appendChild(onceDateInput);
+    onceFields.appendChild(timeField(cat.color, pendingTime[cat.id], function (v) { pendingTime[cat.id] = v; }));
 
     recBtn.addEventListener("click", function () {
       mode = "recurring";
@@ -1660,12 +1710,13 @@
       if (mode === "recurring") {
         var days = pendingDays[cat.id];
         if (days.length === 0) { showToast("Escolha pelo menos um dia da semana."); return; }
-        state[cat.id].schedule.push(mkScheduleItem({ title: title, note: noteInput.value.trim(), days: days }));
+        state[cat.id].schedule.push(mkScheduleItem({ title: title, note: noteInput.value.trim(), days: days, time: pendingTime[cat.id] }));
         pendingDays[cat.id] = [];
       } else {
-        state[cat.id].projects.push(mkProjectTask({ text: title, date: pendingOnceDate[cat.id] || null }));
+        state[cat.id].projects.push(mkProjectTask({ text: title, date: pendingOnceDate[cat.id] || null, time: pendingTime[cat.id] }));
         pendingOnceDate[cat.id] = "";
       }
+      pendingTime[cat.id] = "";
       save();
       render();
     });
@@ -1716,6 +1767,13 @@
       note.textContent = item.note;
       main.appendChild(note);
     }
+    if (item.time) {
+      var timeBadge = document.createElement("span");
+      timeBadge.className = "task-day-badge";
+      timeBadge.style.setProperty("--task-accent", catColor);
+      timeBadge.textContent = item.time;
+      main.appendChild(timeBadge);
+    }
 
     var actions = document.createElement("div");
     actions.className = "task-actions";
@@ -1729,6 +1787,7 @@
       editModeTemp = "recurring";
       editDaysTemp = item.days.slice();
       editOnceDateTemp = "";
+      editTimeTemp = item.time || "";
       render();
     });
 
@@ -1783,6 +1842,13 @@
     text.className = "task-text";
     text.textContent = item.text;
     main.appendChild(text);
+    if (item.time) {
+      var timeBadge = document.createElement("span");
+      timeBadge.className = "task-day-badge";
+      timeBadge.style.setProperty("--task-accent", catColor);
+      timeBadge.textContent = item.time;
+      main.appendChild(timeBadge);
+    }
 
     var actions = document.createElement("div");
     actions.className = "task-actions";
@@ -1796,6 +1862,7 @@
       editModeTemp = "once";
       editDaysTemp = [];
       editOnceDateTemp = item.date || "";
+      editTimeTemp = item.time || "";
       render();
     });
 
@@ -1861,6 +1928,7 @@
     var toggles = buildDayToggles(cat.color, editDaysTemp);
     recurringFields.appendChild(noteInput);
     recurringFields.appendChild(toggles);
+    recurringFields.appendChild(timeField(cat.color, editTimeTemp, function (v) { editTimeTemp = v; }));
 
     var onceFields = document.createElement("div");
     onceFields.className = "new-task-recurring-fields";
@@ -1879,6 +1947,7 @@
     });
     onceFields.appendChild(onceHint);
     onceFields.appendChild(onceDateInput);
+    onceFields.appendChild(timeField(cat.color, editTimeTemp, function (v) { editTimeTemp = v; }));
 
     recBtn.addEventListener("click", function () {
       editModeTemp = "recurring";
@@ -1915,20 +1984,22 @@
           item.title = title;
           item.note = noteInput.value.trim();
           item.days = editDaysTemp.slice();
+          item.time = editTimeTemp;
         } else {
           var pIdx = state[cat.id].projects.indexOf(item);
           if (pIdx >= 0) state[cat.id].projects.splice(pIdx, 1);
-          state[cat.id].schedule.push(mkScheduleItem({ title: title, note: noteInput.value.trim(), days: editDaysTemp }));
+          state[cat.id].schedule.push(mkScheduleItem({ title: title, note: noteInput.value.trim(), days: editDaysTemp, time: editTimeTemp }));
         }
       } else {
         var onceDate = editOnceDateTemp || null;
         if (kind === "project") {
           item.text = title;
           item.date = onceDate;
+          item.time = editTimeTemp;
         } else {
           var sIdx = state[cat.id].schedule.indexOf(item);
           if (sIdx >= 0) state[cat.id].schedule.splice(sIdx, 1);
-          state[cat.id].projects.push(mkProjectTask({ text: title, date: onceDate }));
+          state[cat.id].projects.push(mkProjectTask({ text: title, date: onceDate, time: editTimeTemp }));
         }
       }
       editingId = null;
@@ -2248,6 +2319,13 @@
       text.className = "task-text";
       text.textContent = task.text;
       main.appendChild(text);
+      if (task.time) {
+        var timeBadge = document.createElement("span");
+        timeBadge.className = "task-day-badge";
+        timeBadge.style.setProperty("--task-accent", catColor);
+        timeBadge.textContent = task.time;
+        main.appendChild(timeBadge);
+      }
 
       var actions = document.createElement("div");
       actions.className = "task-actions";
@@ -2261,6 +2339,7 @@
         editModeTemp = "once";
         editDaysTemp = [];
         editOnceDateTemp = task.date || "";
+        editTimeTemp = task.time || "";
         render();
       });
 
@@ -2498,8 +2577,245 @@
       .catch(function () {});
   }
 
+  // ---- Unified "Hoje" overview: merges all 4 categories into one
+  // chronological list (today + next OVERVIEW_DAYS-1 days), not grouped by
+  // day headers — each row carries its own day/time/category badge instead.
+  function overviewDayLabel(offset, d) {
+    if (offset === 0) return "Hoje";
+    if (offset === 1) return "Amanhã";
+    return DAY_SHORT[d.getDay()] + " " + String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0");
+  }
+
+  function collectOverviewOccurrences() {
+    var out = [];
+    for (var offset = 0; offset < OVERVIEW_DAYS; offset++) {
+      var d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + offset);
+      var weekday = d.getDay();
+      var monday = mondayOf(d);
+      var iso = d.toISOString().slice(0, 10);
+      CATEGORIES.forEach(function (cat) {
+        state[cat.id].schedule.forEach(function (it) {
+          if (it.days.indexOf(weekday) === -1) return;
+          out.push({ catId: cat.id, catColor: cat.color, catLabel: cat.label, kind: "schedule", item: it, weekday: weekday, monday: monday, offset: offset, date: d, time: it.time || "" });
+        });
+        state[cat.id].projects.forEach(function (t) {
+          if (t.date !== iso) return;
+          out.push({ catId: cat.id, catColor: cat.color, catLabel: cat.label, kind: "once", item: t, weekday: weekday, monday: monday, offset: offset, date: d, time: t.time || "" });
+        });
+      });
+    }
+    out.sort(function (a, b) {
+      if (a.offset !== b.offset) return a.offset - b.offset;
+      if (a.time && b.time) return a.time < b.time ? -1 : a.time > b.time ? 1 : 0;
+      if (a.time && !b.time) return -1;
+      if (!a.time && b.time) return 1;
+      return 0;
+    });
+    return out;
+  }
+
+  function overviewTaskRow(occ) {
+    var catId = occ.catId, catColor = occ.catColor, item = occ.item;
+    var li = document.createElement("li");
+    li.className = "task";
+    li.style.setProperty("--task-accent", catColor);
+
+    var isDone = occ.kind === "schedule" ? !!((item.doneMap[occ.monday] || {})[occ.weekday]) : !!item.done;
+    li.setAttribute("data-done", String(isDone));
+
+    var check = document.createElement("input");
+    check.type = "checkbox";
+    check.className = "check";
+    check.checked = isDone;
+    check.style.setProperty("--cat-color", catColor);
+    check.addEventListener("change", function () {
+      if (occ.kind === "schedule") {
+        if (!item.doneMap[occ.monday]) item.doneMap[occ.monday] = {};
+        item.doneMap[occ.monday][occ.weekday] = check.checked;
+      } else {
+        item.done = check.checked;
+      }
+      if (check.checked && occ.offset === 0 && isDayComplete(catId, occ.weekday, occ.monday)) {
+        var streak = computeStreak(catId);
+        showToast("Dia completo — sequência de " + streak + (streak === 1 ? " dia." : " dias."));
+      }
+      save();
+      render();
+    });
+
+    var main = document.createElement("div");
+    main.className = "task-main";
+    var text = document.createElement("span");
+    text.className = "task-text";
+    text.textContent = occ.kind === "schedule" ? item.title : item.text;
+    main.appendChild(text);
+    if (occ.kind === "schedule" && item.note) {
+      var note = document.createElement("span");
+      note.className = "task-note";
+      note.textContent = item.note;
+      main.appendChild(note);
+    }
+
+    var badgeRow = document.createElement("div");
+    badgeRow.style.display = "flex";
+    badgeRow.style.gap = "0.35rem";
+    badgeRow.style.flexWrap = "wrap";
+    badgeRow.style.marginTop = "0.3rem";
+
+    var catBadge = document.createElement("span");
+    catBadge.className = "task-day-badge";
+    catBadge.style.setProperty("--task-accent", catColor);
+    catBadge.textContent = occ.catLabel;
+    badgeRow.appendChild(catBadge);
+
+    var dayBadge = document.createElement("span");
+    dayBadge.className = "task-day-badge";
+    dayBadge.style.setProperty("--task-accent", catColor);
+    dayBadge.textContent = overviewDayLabel(occ.offset, occ.date) + (occ.time ? " · " + occ.time : "");
+    badgeRow.appendChild(dayBadge);
+
+    main.appendChild(badgeRow);
+
+    var actions = document.createElement("div");
+    actions.className = "task-actions";
+
+    var editBtn = document.createElement("button");
+    editBtn.className = "task-mini-btn";
+    editBtn.type = "button";
+    editBtn.textContent = "Editar";
+    editBtn.addEventListener("click", function () {
+      state.activeTab = catId;
+      if (occ.kind === "once") state.viewingWeek = occ.monday;
+      editingId = item.id;
+      editModeTemp = occ.kind === "schedule" ? "recurring" : "once";
+      editDaysTemp = occ.kind === "schedule" ? item.days.slice() : [];
+      editOnceDateTemp = occ.kind === "once" ? (item.date || "") : "";
+      editTimeTemp = item.time || "";
+      save();
+      render();
+    });
+
+    var del = document.createElement("button");
+    del.className = "task-mini-btn del";
+    del.type = "button";
+    del.setAttribute("aria-label", "Remover tarefa");
+    del.textContent = "×";
+    del.addEventListener("click", function () {
+      var bucket = occ.kind === "schedule" ? state[catId].schedule : state[catId].projects;
+      var idx = bucket.indexOf(item);
+      if (idx >= 0) bucket.splice(idx, 1);
+      save();
+      render();
+    });
+
+    actions.appendChild(editBtn);
+    actions.appendChild(del);
+
+    li.appendChild(check);
+    li.appendChild(main);
+    li.appendChild(actions);
+    return li;
+  }
+
+  function overviewHero() {
+    var hero = document.createElement("section");
+    hero.className = "hero";
+    hero.style.background = "linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, white))";
+
+    var hour = new Date().getHours();
+    var greeting = hour < 5 ? "Boa noite" : hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+    var title = document.createElement("h2");
+    title.className = "hero-title";
+    title.textContent = greeting + ".";
+    hero.appendChild(title);
+
+    var todayTotal = 0, todayDone = 0;
+    CATEGORIES.forEach(function (cat) {
+      var scheduled = state[cat.id].schedule.filter(function (it) { return it.days.indexOf(todayWeekday) !== -1; });
+      var once = state[cat.id].projects.filter(function (t) { return t.date === todayISO; });
+      todayTotal += scheduled.length + once.length;
+      scheduled.forEach(function (it) {
+        var wm = it.doneMap[currentMonday] || {};
+        if (wm[todayWeekday]) todayDone++;
+      });
+      once.forEach(function (t) { if (t.done) todayDone++; });
+    });
+    var todayRemaining = todayTotal - todayDone;
+
+    var sub = document.createElement("div");
+    sub.className = "hero-sub";
+    if (todayTotal === 0) sub.textContent = "Nada agendado pra hoje, em nenhuma categoria.";
+    else if (todayRemaining === 0) sub.textContent = "Hoje está completo em tudo.";
+    else sub.textContent = todayRemaining === 1 ? "Falta 1 tarefa pra hoje, no total." : "Faltam " + todayRemaining + " tarefas pra hoje, no total.";
+    hero.appendChild(sub);
+
+    var stats = document.createElement("div");
+    stats.className = "hero-stats";
+    var count = document.createElement("span");
+    count.className = "progress-count";
+    count.textContent = todayDone + "/" + todayTotal + " hoje";
+    stats.appendChild(count);
+    var pct = todayTotal ? Math.round((todayDone / todayTotal) * 100) : 0;
+    stats.appendChild(buildProgressRing(pct, "#ffffff", 34, "rgba(255,255,255,0.28)"));
+    hero.appendChild(stats);
+
+    var labelRow = document.createElement("div");
+    labelRow.className = "day-strip-label";
+    var labelText = document.createElement("span");
+    labelText.textContent = "Hoje e os próximos " + (OVERVIEW_DAYS - 1) + " dias, todas as categorias";
+    labelRow.appendChild(labelText);
+    hero.appendChild(labelRow);
+
+    return hero;
+  }
+
+  function overviewBlock() {
+    var block = document.createElement("section");
+    block.className = "block";
+
+    var head = document.createElement("div");
+    head.className = "block-head";
+    var titleGroup = document.createElement("div");
+    titleGroup.className = "block-title-group";
+    var titleEl = document.createElement("div");
+    titleEl.className = "block-title";
+    titleEl.textContent = "Tudo junto";
+    var subEl = document.createElement("div");
+    subEl.className = "block-sub";
+    subEl.textContent = "Ordenado por dia e horário";
+    titleGroup.appendChild(titleEl);
+    titleGroup.appendChild(subEl);
+    head.appendChild(titleGroup);
+    block.appendChild(head);
+
+    var occs = collectOverviewOccurrences();
+    var list = document.createElement("ul");
+    list.className = "tasks";
+
+    if (occs.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "Nada agendado nos próximos " + OVERVIEW_DAYS + " dias.";
+      list.appendChild(empty);
+    } else {
+      occs.forEach(function (occ) { list.appendChild(overviewTaskRow(occ)); });
+    }
+
+    block.appendChild(list);
+    return block;
+  }
+
   function render() {
     renderTabs();
+    if (state.activeTab === OVERVIEW_ID) {
+      heroEl.innerHTML = "";
+      heroEl.appendChild(overviewHero());
+      contentEl.innerHTML = "";
+      contentEl.appendChild(overviewBlock());
+      return;
+    }
     var cat = CATEGORIES.filter(function (c) { return c.id === state.activeTab; })[0];
     heroEl.innerHTML = "";
     heroEl.appendChild(heroBlock(cat));
@@ -2544,11 +2860,11 @@
     var dy = endY - touchStartY;
     touchStartX = null;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    var ids = CATEGORIES.map(function (c) { return c.id; });
+    var ids = [OVERVIEW_ID].concat(CATEGORIES.map(function (c) { return c.id; }));
     var idx = ids.indexOf(state.activeTab);
     var nextIdx = dx < 0 ? idx + 1 : idx - 1;
-    if (nextIdx < 0 || nextIdx >= CATEGORIES.length) return;
-    state.activeTab = CATEGORIES[nextIdx].id;
+    if (nextIdx < 0 || nextIdx >= ids.length) return;
+    state.activeTab = ids[nextIdx];
     editingId = null;
     save();
     render();
