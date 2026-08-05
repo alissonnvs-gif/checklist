@@ -431,6 +431,40 @@
 
   footer.note { margin-top: 26px; font-size: 0.72rem; color: var(--ink-2); line-height: 1.5; opacity: 0.8; }
 
+  /* ================= LOGIN ================= */
+
+  .authwrap {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px calc(18px + env(safe-area-inset-left)) 24px calc(18px + env(safe-area-inset-right));
+  }
+  .authwrap[hidden] { display: none; }
+  .authcard { width: 100%; max-width: 380px; border-radius: 26px; padding: 30px 26px 24px; }
+  .auth-title { margin: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); }
+  .auth-sub { margin: 8px 0 22px; font-size: 0.86rem; line-height: 1.5; color: var(--ink-2); }
+  .auth-inp { display: block; width: 100%; margin-bottom: 11px; }
+  .auth-msg {
+    margin: 2px 0 12px; font-size: 0.8rem; line-height: 1.45;
+    padding: 10px 13px; border-radius: 13px;
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    color: var(--ink-2);
+  }
+  .auth-msg[hidden] { display: none; }
+  .auth-msg[data-kind="erro"] { background: color-mix(in srgb, #E0483C 14%, transparent); color: #B4241A; }
+  :root[data-theme="noite"] .auth-msg[data-kind="erro"] { color: #FFAEA6; }
+  .authbtn {
+    width: 100%; border: 0; border-radius: 999px; padding: 14px 20px;
+    font: inherit; font-weight: 700; font-size: 0.95rem; color: var(--ink);
+    cursor: pointer; margin-top: 4px;
+  }
+  .authbtn[disabled] { opacity: 0.55; cursor: default; }
+  .auth-switch {
+    display: block; width: 100%; margin-top: 16px; padding: 6px;
+    background: none; border: 0; font: inherit; font-size: 0.82rem;
+    color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+  }
+  .auth-switch:hover { color: var(--ink); }
+
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
@@ -479,13 +513,28 @@
   <div id="formSlot"></div>
 
   <footer class="note">
-    Salvo neste navegador e sincronizado com o Notion. O histórico de cada semana fica guardado —
+    Salvo na sua conta e sincronizado entre seus aparelhos. O histórico de cada semana fica guardado —
     navegue entre semanas sem perder o que já foi marcado.
   </footer>
 </div>
 
+<div class="authwrap" id="authwrap" hidden>
+  <section class="gl gl-clear authcard">
+    <h1 class="auth-title">Checklist</h1>
+    <p class="auth-sub" id="authSub">Crie sua conta uma vez. Depois é só abrir — o app te mantém dentro.</p>
+    <form id="authForm" novalidate>
+      <input class="inp auth-inp" id="authEmail" type="email" placeholder="Seu e-mail" autocomplete="email" autocapitalize="off" spellcheck="false">
+      <input class="inp auth-inp" id="authPass" type="password" placeholder="Sua senha" autocomplete="current-password">
+      <p class="auth-msg" id="authMsg" hidden></p>
+      <button class="gl gl-white authbtn" id="authGo" type="submit">Criar conta</button>
+    </form>
+    <button class="auth-switch" id="authSwitch" type="button">Já tenho conta — entrar</button>
+  </section>
+</div>
+
 <div class="gl gl-white toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (function () {
   "use strict";
@@ -494,8 +543,20 @@
      DADOS — camada preservada da versão anterior
      ========================================================= */
 
-  var STORAGE_KEY = "checklist_negocios_v3";
-  var STORAGE_KEY_LEGACY = "checklist_negocios_v2";
+  /* ---- Servidor (Supabase) ----
+     A chave abaixo é pública de propósito: ela só identifica o projeto. Quem
+     protege os dados é o RLS, configurado no banco — cada conta enxerga
+     exclusivamente as próprias linhas, e nem esta chave nem um app com bug
+     mudam isso. */
+  var SUPA_URL = "https://vccmpzzebhwmbarqnfod.supabase.co";
+  var SUPA_KEY = "sb_publishable_YVDq4Yvyn4dHoJ1mbVSYPw_oXcARWX1";
+
+  // Uma chave de armazenamento por conta, para que duas contas no mesmo
+  // navegador nunca misturem dados. Definida no login.
+  var STORAGE_KEY = null;
+  var DEVICE_KEY = "checklist_negocios_v3";
+  var DEVICE_KEY_LEGACY = "checklist_negocios_v2";
+  var THEME_KEY = "checklist_tema";   // tema antes do login, por aparelho
 
   // Paletas prontas em vez de seletor livre de cor. Cor solta quebraria o
   // visual: um amarelo bonito some no tema Dia. Cada dupla foi ajustada nos
@@ -673,8 +734,15 @@
     if (!parsed.viewingWeek) parsed.viewingWeek = mondayOf(new Date());
     if (typeof parsed.seedVersion !== "number") parsed.seedVersion = 0;
     if (typeof parsed.hardResetVersion !== "number") parsed.hardResetVersion = 0;
-    if (!parsed.syncMeta) parsed.syncMeta = {};
-    if (!parsed.syncKnownIds) parsed.syncKnownIds = [];
+    // Assinatura do que acreditamos que o servidor já tem, para enviar só o
+    // que mudou em vez de reenviar tudo a cada salvamento.
+    if (!parsed.srv || typeof parsed.srv !== "object") parsed.srv = {};
+    if (typeof parsed.srv.profile !== "string") parsed.srv.profile = null;
+    if (!parsed.srv.cats) parsed.srv.cats = {};
+    if (!parsed.srv.tasks) parsed.srv.tasks = {};
+    if (!parsed.srv.checks) parsed.srv.checks = {};
+    delete parsed.syncMeta;
+    delete parsed.syncKnownIds;
     if (!parsed.overviewSeen) { parsed.activeTab = OVERVIEW_ID; parsed.overviewSeen = true; }
     if (typeof parsed.userName !== "string") parsed.userName = "";
     if (parsed.theme !== "dia" && parsed.theme !== "noite") parsed.theme = null;
@@ -716,31 +784,53 @@
     return true;
   }
 
-  function load() {
-    var parsed;
+  function readStored(key) {
     try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        parsed = JSON.parse(raw);
-      } else {
-        var rawLegacy = localStorage.getItem(STORAGE_KEY_LEGACY);
-        parsed = rawLegacy ? migrateFromLegacy(JSON.parse(rawLegacy)) : defaultState();
-      }
-    } catch (e) {
-      parsed = defaultState();
+      var raw = key ? localStorage.getItem(key) : null;
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  // O que já estava neste navegador antes de existir conta. Serve só para a
+  // migração única: na primeira vez que uma conta vazia entra neste aparelho,
+  // estes dados sobem para ela em vez de se perderem.
+  function readDeviceState() {
+    var parsed = readStored(DEVICE_KEY);
+    if (!parsed) {
+      var legacy = readStored(DEVICE_KEY_LEGACY);
+      parsed = legacy ? migrateFromLegacy(legacy) : null;
     }
-    return ensureShape(parsed);
+    return parsed ? ensureShape(parsed) : null;
   }
 
-  function save(skipSync) {
+  function load() {
+    return ensureShape(readStored(STORAGE_KEY) || defaultState());
+  }
+
+  // Grava a cópia local (instantânea, funciona sem internet) e agenda o envio
+  // para o servidor. O antigo argumento "skipSync" deixou de existir: agora o
+  // servidor guarda tudo — nome, tema e abas inclusive —, então toda alteração
+  // precisa subir. As chamadas antigas save(true) continuam válidas, o
+  // argumento só é ignorado.
+  function save() {
+    if (!STORAGE_KEY) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    if (!skipSync) scheduleSyncPush();
+    localDirty = true;
+    schedulePush();
   }
 
-  var state = load();
-  var hardReset = applyHardReset(state);
-  var seedChanged = applySeedUpdates(state);
-  if (hardReset || seedChanged) save(true);
+  // Persiste sem marcar como pendente — usado depois de um envio bem-sucedido,
+  // para gravar o que o servidor já sabe sem disparar um novo envio.
+  function persistQuiet() {
+    if (!STORAGE_KEY) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  // O estado real só é montado depois do login (startSession). Este aqui
+  // existe para nenhuma função encontrar "state" indefinido antes disso.
+  var state = ensureShape(defaultState());
+  var seedChanged = false;
+  var localDirty = false;
 
   /* =========================================================
      ESTADO DE TELA
@@ -1626,6 +1716,7 @@
 
   var pendingDelete = null;   // id da aba com a exclusão em andamento
   var pendingPalette = null;  // id da aba com o seletor de cor aberto
+  var pendingSignOut = false; // confirmação em dois toques para sair da conta
 
   function renderSettings() {
     elBody.innerHTML = "";
@@ -1634,7 +1725,7 @@
     /* --- nome --- */
     var b1 = el("section", "gl gl-clear set-block");
     b1.appendChild(el("h2", "set-title", "Seu nome"));
-    b1.appendChild(el("p", "set-help", "Aparece na saudação da página Geral. Por enquanto vale só neste aparelho."));
+    b1.appendChild(el("p", "set-help", "Aparece na saudação da página Geral. Vale em todos os seus aparelhos."));
     var inpName = el("input", "inp");
     inpName.type = "text";
     inpName.placeholder = "Como quer ser chamado";
@@ -1662,14 +1753,6 @@
       if (pendingDelete === c.id) b2.appendChild(deleteBox(c));
     });
 
-    // Aviso contextual: só aparece quando existe alguma aba fora do Notion.
-    if (cats().filter(function (c) { return !syncsToNotion(c.id); }).length) {
-      var aviso = el("p", "set-help");
-      aviso.style.margin = "14px 0 0";
-      aviso.textContent = "As abas que você criou funcionam normalmente, mas ficam só neste aparelho — o Notion tem uma lista fixa de negócios. Isso deixa de ser limitação quando o app ganhar servidor próprio.";
-      b2.appendChild(aviso);
-    }
-
     var add = el("button", "minibtn", "Adicionar aba");
     add.type = "button";
     add.style.marginTop = "14px";
@@ -1687,6 +1770,37 @@
     });
     b2.appendChild(add);
     wrap.appendChild(b2);
+
+    /* --- conta --- */
+    var b3 = el("section", "gl gl-clear set-block");
+    b3.appendChild(el("h2", "set-title", "Sua conta"));
+    b3.appendChild(el("p", "set-help",
+      "Você está em " + ((currentUser && currentUser.email) || "—") +
+      ". Suas tarefas ficam guardadas nesta conta e aparecem em qualquer aparelho onde você entrar."));
+
+    if (!pendingSignOut) {
+      var sair = el("button", "minibtn", "Sair da conta");
+      sair.type = "button";
+      sair.style.marginTop = "12px";
+      sair.addEventListener("click", function () { pendingSignOut = true; renderSettings(); });
+      b3.appendChild(sair);
+    } else {
+      var cx = el("div", "danger-box");
+      cx.appendChild(el("span", "danger-msg",
+        "Ao sair, este aparelho vai pedir e-mail e senha de novo na próxima vez. Suas tarefas continuam guardadas na conta — nada é apagado."));
+      var linha = el("div", "danger-acts");
+      var conf = el("button", "minibtn", "Sair mesmo assim");
+      conf.type = "button";
+      conf.addEventListener("click", function () { signOut(); });
+      var cancela = el("button", "minibtn minibtn-ghost", "Cancelar");
+      cancela.type = "button";
+      cancela.addEventListener("click", function () { pendingSignOut = false; renderSettings(); });
+      linha.appendChild(conf);
+      linha.appendChild(cancela);
+      cx.appendChild(linha);
+      b3.appendChild(cx);
+    }
+    wrap.appendChild(b3);
 
     elBody.appendChild(wrap);
   }
@@ -1902,9 +2016,18 @@
      TEMA
      ========================================================= */
 
+  // Antes do login não existe conta de onde ler o tema. O último usado neste
+  // aparelho evita a tela de entrada aparecer na aparência errada e piscar.
+  function readDeviceTheme() {
+    var salvo = null;
+    try { salvo = localStorage.getItem(THEME_KEY); } catch (e) {}
+    if (salvo === "dia" || salvo === "noite") return salvo;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "noite" : "dia";
+  }
+
   function applyTheme() {
-    var t = state.theme;
-    if (!t) t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "noite" : "dia";
+    var t = state.theme || readDeviceTheme();
+    try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
     document.documentElement.setAttribute("data-theme", t);
     [].slice.call(document.querySelectorAll(".th")).forEach(function (b) {
       b.setAttribute("aria-pressed", String(b.getAttribute("data-set") === t));
@@ -1928,6 +2051,7 @@
     draft = null;
     pendingDelete = null;
     pendingPalette = null;
+    pendingSignOut = false;
     elGear.setAttribute("aria-expanded", String(settingsOpen));
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1950,226 +2074,320 @@
   });
 
   /* =========================================================
-     SINCRONIZAÇÃO COM O NOTION (via proxy checklist-sync)
-     Só a DEFINIÇÃO da tarefa (título/nota/categoria/dias) e o "done" das
-     tarefas de data única sincronizam. O histórico semanal (doneMap) das
-     recorrentes nunca é lido nem escrito aqui — fica só local.
+     SERVIDOR (Supabase) — conta, login e sincronismo
+     Agora sincroniza TUDO: abas, tarefas, horários, o histórico semanal de
+     marcações, o nome e o tema. A cópia local continua existindo e é o que a
+     tela lê — o app abre e funciona sem internet, e envia quando ela voltar.
      ========================================================= */
 
-  var SYNC_API_BASE = "https://checklist-sync-eta.vercel.app";
-  var SYNC_APP_KEY = "092c4172262678f0a600ba069d3026d0157e449f";
-  function isKnownCategory(id) {
-    return !!id && !!catOf(id);
-  }
-  var syncPushTimer = null;
-
-  function taskToSyncPayload(catId, kind, item) {
-    return {
-      appId: item.id,
-      notionPageId: item.notionPageId || undefined,
-      category: catId,
-      kind: kind,
-      title: kind === "schedule" ? item.title : item.text,
-      note: kind === "schedule" ? (item.note || "") : "",
-      days: kind === "schedule" ? item.days.slice() : [],
-      date: kind === "once" ? (item.date || null) : null,
-      done: kind === "once" ? !!item.done : false,
-      archived: false
-    };
+  // Se a biblioteca do servidor não carregou (primeira abertura sem internet),
+  // avisa em vez de deixar a tela em branco.
+  if (!window.supabase || !window.supabase.createClient) {
+    document.querySelector(".page").style.display = "none";
+    document.getElementById("authwrap").hidden = false;
+    document.getElementById("authSub").textContent =
+      "Não deu para carregar o servidor. Confira a internet e abra o app de novo.";
+    document.getElementById("authForm").style.display = "none";
+    document.getElementById("authSwitch").style.display = "none";
+    return;
   }
 
-  function syncFingerprint(payload) {
-    return JSON.stringify([payload.category, payload.kind, payload.title, payload.note, payload.days.slice().sort(), payload.date, payload.done]);
-  }
+  var sb = window.supabase.createClient(SUPA_URL, SUPA_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+  });
 
-  // Assinatura do que veio do Notion, normalizada pelo mesmo caminho do item
-  // local — só assim as duas são comparáveis campo a campo.
-  function remoteFingerprint(remote) {
-    var pseudo = remote.kind === "once"
-      ? { id: remote.appId, text: remote.title, date: remote.date || null, done: !!remote.done }
-      : { id: remote.appId, title: remote.title, note: remote.note || "", days: (remote.days || []).slice() };
-    return syncFingerprint(taskToSyncPayload(remote.category, remote.kind, pseudo));
-  }
+  var currentUser = null;
 
-  // O Notion tem uma lista fixa de negócios, criada antes das abas virarem
-  // editáveis. Abas novas não cabem lá, então ficam só no aparelho até o
-  // servidor próprio entrar no lugar do Notion. Sem esta guarda, cada tarefa
-  // de uma aba nova tentaria subir a cada salvamento e falharia em silêncio.
-  var NOTION_CATEGORIES = { blueCrab: 1, loom: 1, loomStore: 1, pessoal: 1 };
+  /* ---------- o que o servidor deveria ter, a partir do estado local ---------- */
 
-  function syncsToNotion(catId) { return !!NOTION_CATEGORIES[catId]; }
+  function desiredRows() {
+    var rows = { profile: null, cats: {}, tasks: {}, checks: {} };
+    rows.profile = { display_name: state.userName || "", theme: state.theme || null };
 
-  function collectAllSyncableItems() {
-    var out = [];
-    cats().filter(function (c) { return syncsToNotion(c.id); }).forEach(function (cat) {
-      state[cat.id].schedule.forEach(function (it) { out.push({ catId: cat.id, kind: "schedule", item: it }); });
-      state[cat.id].projects.forEach(function (it) { out.push({ catId: cat.id, kind: "once", item: it }); });
-    });
-    return out;
-  }
-
-  function pushOneToNotion(item, payload, fp) {
-    fetch(SYNC_API_BASE + "/api/schedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-App-Key": SYNC_APP_KEY },
-      body: JSON.stringify(payload)
-    }).then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
-      .then(function (data) {
-        item.notionPageId = data.task.notionPageId;
-        state.syncMeta[item.id] = { fp: fp, notionPageId: data.task.notionPageId, remoteUpdatedAt: data.task.updatedAt };
-        save(true);
-      })
-      .catch(function () {});
-  }
-
-  function runSyncPush() {
-    var all = collectAllSyncableItems();
-    var currentIds = {};
-    all.forEach(function (entry) {
-      currentIds[entry.item.id] = true;
-      var payload = taskToSyncPayload(entry.catId, entry.kind, entry.item);
-      var fp = syncFingerprint(payload);
-      var meta = state.syncMeta[entry.item.id];
-      if (meta && meta.fp === fp) return;
-      pushOneToNotion(entry.item, payload, fp);
+    cats().forEach(function (c, i) {
+      rows.cats[c.id] = { id: c.id, label: c.label, palette: c.palette, sort_order: i };
     });
 
-    state.syncKnownIds.filter(function (id) { return !currentIds[id]; }).forEach(function (id) {
-      var meta = state.syncMeta[id];
-      fetch(SYNC_API_BASE + "/api/schedule/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-App-Key": SYNC_APP_KEY },
-        body: JSON.stringify({ appId: id, notionPageId: meta && meta.notionPageId })
-      }).catch(function () {});
-      delete state.syncMeta[id];
+    cats().forEach(function (c) {
+      var bucket = state[c.id];
+      if (!bucket) return;
+
+      bucket.schedule.forEach(function (it) {
+        rows.tasks[it.id] = {
+          id: it.id, category_id: c.id, kind: "schedule",
+          title: it.title || "", note: it.note || "",
+          days: (it.days || []).slice().sort(function (a, b) { return a - b; }),
+          due_date: null, time_of_day: it.time || "", done: false,
+          // Mandamos a data de criação de propósito em vez de deixar o banco
+          // carimbar a dele: é por ela que a lista é ordenada, e um lote
+          // enviado de uma vez receberia todos o mesmo carimbo, embaralhando
+          // a ordem das tarefas na próxima abertura.
+          created_at: new Date(it.createdAt || Date.now()).toISOString()
+        };
+        var dm = it.doneMap || {};
+        Object.keys(dm).forEach(function (monday) {
+          Object.keys(dm[monday]).forEach(function (wd) {
+            if (!dm[monday][wd]) return;
+            rows.checks[it.id + "|" + monday + "|" + wd] =
+              { task_id: it.id, week_monday: monday, weekday: Number(wd) };
+          });
+        });
+      });
+
+      bucket.projects.forEach(function (t) {
+        rows.tasks[t.id] = {
+          id: t.id, category_id: c.id, kind: "once",
+          title: t.text || "", note: "", days: [],
+          due_date: t.date || null, time_of_day: t.time || "", done: !!t.done,
+          created_at: new Date(t.createdAt || Date.now()).toISOString()
+        };
+      });
     });
-    state.syncKnownIds = Object.keys(currentIds);
-    save(true);
+
+    return rows;
   }
 
-  function scheduleSyncPush() {
-    if (!SYNC_API_BASE) return;
-    window.clearTimeout(syncPushTimer);
-    syncPushTimer = window.setTimeout(runSyncPush, 800);
-  }
+  function fpOf(o) { return JSON.stringify(o); }
 
-  function findLocalSyncItem(id) {
-    var list = cats();
-    for (var i = 0; i < list.length; i++) {
-      var cat = list[i];
-      var s = state[cat.id].schedule.filter(function (it) { return it.id === id; })[0];
-      if (s) return { catId: cat.id, kind: "schedule", item: s };
-      var p = state[cat.id].projects.filter(function (it) { return it.id === id; })[0];
-      if (p) return { catId: cat.id, kind: "once", item: p };
-    }
-    return null;
-  }
-
-  function findLocalByNotionPageId(pageId) {
-    if (!pageId) return null;
-    var list = cats();
-    for (var i = 0; i < list.length; i++) {
-      var cat = list[i];
-      var s = state[cat.id].schedule.filter(function (it) { return it.notionPageId === pageId; })[0];
-      if (s) return { catId: cat.id, kind: "schedule", item: s };
-      var p = state[cat.id].projects.filter(function (it) { return it.notionPageId === pageId; })[0];
-      if (p) return { catId: cat.id, kind: "once", item: p };
-    }
-    return null;
-  }
-
-  function applyRemoteTask(remote) {
-    if (!isKnownCategory(remote.category)) return false;
-    var appId = remote.appId;
-    // Casa por appId primeiro; cai para notionPageId para não readotar como
-    // duplicata uma linha que já adotamos mas cujo AppId ainda não voltou.
-    var local = appId ? findLocalSyncItem(appId) : null;
-    if (!local) local = findLocalByNotionPageId(remote.notionPageId);
-
-    if (!local) {
-      var newId = appId || uid();
-      var bucket = state[remote.category];
-      var newItem;
-      if (remote.kind === "once") {
-        newItem = { id: newId, text: remote.title, date: remote.date || null, time: "", done: !!remote.done, createdAt: Date.now(), notionPageId: remote.notionPageId };
-        bucket.projects.push(newItem);
-      } else {
-        newItem = { id: newId, title: remote.title, note: remote.note || "", days: (remote.days || []).slice(), time: "", doneMap: {}, createdAt: Date.now(), notionPageId: remote.notionPageId };
-        bucket.schedule.push(newItem);
-      }
-      if (state.syncKnownIds.indexOf(newId) === -1) state.syncKnownIds.push(newId);
-      if (appId) {
-        var fp = syncFingerprint(taskToSyncPayload(remote.category, remote.kind, newItem));
-        state.syncMeta[newId] = { fp: fp, notionPageId: remote.notionPageId, remoteUpdatedAt: remote.updatedAt };
-      } else {
-        scheduleSyncPush();
-      }
-      return true;
-    }
-
-    var meta = state.syncMeta[local.item.id];
-    if (local.kind !== remote.kind || local.catId !== remote.category) return false;
-
-    // Comparar conteúdo, não carimbo de hora. O Notion arredonda o
-    // last_edited_time para o minuto, então marcar e desmarcar dentro do mesmo
-    // minuto chegava com o carimbo idêntico e a segunda alteração era
-    // descartada como "já vista" — desmarcar não sincronizava.
-    var localFp = syncFingerprint(taskToSyncPayload(local.catId, local.kind, local.item));
-    if (remoteFingerprint(remote) === localFp) {
-      if (meta) meta.remoteUpdatedAt = remote.updatedAt;
-      return false;
-    }
-    // Conteúdo diferente. Se o local mudou e ainda não subiu, ele tem
-    // prioridade — senão a busca automática desfaria o que acabou de ser feito.
-    if (meta && meta.fp !== localFp) return false;
-
-    if (remote.kind === "once") {
-      local.item.text = remote.title;
-      local.item.date = remote.date || null;
-      local.item.done = !!remote.done;
-    } else {
-      local.item.title = remote.title;
-      local.item.note = remote.note || "";
-      local.item.days = (remote.days || []).slice();
-    }
-    local.item.notionPageId = remote.notionPageId;
-    if (appId) {
-      var fp2 = syncFingerprint(taskToSyncPayload(local.catId, local.kind, local.item));
-      state.syncMeta[local.item.id] = { fp: fp2, notionPageId: remote.notionPageId, remoteUpdatedAt: remote.updatedAt };
-    } else {
-      scheduleSyncPush();
+  function sameFps(want, have, direto) {
+    var a = Object.keys(want), b = Object.keys(have);
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!(a[i] in have)) return false;
+      if (!direto && have[a[i]] !== fpOf(want[a[i]])) return false;
     }
     return true;
   }
 
-  function syncPull() {
-    if (!SYNC_API_BASE) return;
-    lastPullAt = Date.now();
-    fetch(SYNC_API_BASE + "/api/schedule", { headers: { "X-App-Key": SYNC_APP_KEY } })
-      .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
-      .then(function (data) {
-        var changed = false;
-        (data.tasks || []).forEach(function (remote) {
-          if (applyRemoteTask(remote)) changed = true;
-        });
-        if (changed) { save(true); render(); }
-      })
-      .catch(function () {});
+  // Registra que o servidor está em dia com o que temos aqui.
+  function markServerClean() {
+    var want = desiredRows();
+    var srv = { profile: fpOf(want.profile), cats: {}, tasks: {}, checks: {} };
+    Object.keys(want.cats).forEach(function (id) { srv.cats[id] = fpOf(want.cats[id]); });
+    Object.keys(want.tasks).forEach(function (id) { srv.tasks[id] = fpOf(want.tasks[id]); });
+    Object.keys(want.checks).forEach(function (k) { srv.checks[k] = 1; });
+    state.srv = srv;
+    localDirty = false;
   }
 
-  // Busca automática. O app só recebia novidades ao abrir do zero — no celular
-  // isso quase nunca acontece, porque a aba fica viva ao trocar de aplicativo.
-  // Aqui ele volta a buscar sempre que a tela reaparece e de minuto em minuto.
-  // Nunca durante uma edição: um render no meio apagaria o que está sendo digitado.
+  // Registra que o servidor não tem nada nosso — tudo precisa subir.
+  function markServerEmpty() {
+    state.srv = { profile: null, cats: {}, tasks: {}, checks: {} };
+    localDirty = true;
+  }
+
+  /* ---------- envio ---------- */
+
+  var pushTimer = null;
+  var pushing = false;
+  var pushQueued = false;
+
+  function schedulePush() {
+    if (!currentUser) return;
+    window.clearTimeout(pushTimer);
+    pushTimer = window.setTimeout(runPush, 800);
+  }
+
+  async function runPush() {
+    if (!currentUser || pushing) { if (pushing) pushQueued = true; return; }
+    pushing = true;
+    try {
+      await pushOnce();
+      localDirty = false;
+      persistQuiet();
+    } catch (e) {
+      // Sem internet ou erro do servidor: a cópia local continua válida e o
+      // que ficou pendente sobe na próxima tentativa. Nada se perde.
+      persistQuiet();
+    }
+    pushing = false;
+    if (pushQueued) { pushQueued = false; schedulePush(); }
+  }
+
+  // A ordem importa por causa das ligações entre as tabelas: a tarefa aponta
+  // para a aba e a marcação aponta para a tarefa. Criar segue aba → tarefa →
+  // marcação; apagar segue o caminho inverso.
+  async function pushOnce() {
+    var uidv = currentUser.id;
+    var want = desiredRows();
+    var srv = state.srv;
+
+    function owned(o) {
+      var copy = Object.assign({}, o);
+      copy.user_id = uidv;
+      return copy;
+    }
+    function fail(r) { if (r && r.error) throw r.error; return r; }
+
+    // 1. perfil (nome e tema)
+    var pfp = fpOf(want.profile);
+    if (srv.profile !== pfp) {
+      fail(await sb.from("profiles").upsert({
+        id: uidv, display_name: want.profile.display_name, theme: want.profile.theme
+      }));
+      srv.profile = pfp;
+    }
+
+    // 2. abas novas ou alteradas
+    var catPend = [];
+    Object.keys(want.cats).forEach(function (id) {
+      var fp = fpOf(want.cats[id]);
+      if (srv.cats[id] !== fp) catPend.push([id, fp, owned(want.cats[id])]);
+    });
+    if (catPend.length) {
+      fail(await sb.from("categories").upsert(catPend.map(function (p) { return p[2]; })));
+      catPend.forEach(function (p) { srv.cats[p[0]] = p[1]; });
+    }
+
+    // 3. tarefas novas ou alteradas
+    var taskPend = [];
+    Object.keys(want.tasks).forEach(function (id) {
+      var fp = fpOf(want.tasks[id]);
+      if (srv.tasks[id] !== fp) taskPend.push([id, fp, owned(want.tasks[id])]);
+    });
+    if (taskPend.length) {
+      fail(await sb.from("tasks").upsert(taskPend.map(function (p) { return p[2]; })));
+      taskPend.forEach(function (p) { srv.tasks[p[0]] = p[1]; });
+    }
+
+    // 4. marcações novas
+    var checkNew = Object.keys(want.checks).filter(function (k) { return !srv.checks[k]; });
+    if (checkNew.length) {
+      fail(await sb.from("task_checks").upsert(checkNew.map(function (k) { return owned(want.checks[k]); })));
+      checkNew.forEach(function (k) { srv.checks[k] = 1; });
+    }
+
+    // 5. marcações removidas (desmarcar uma tarefa, resetar a semana)
+    var checkGone = Object.keys(srv.checks).filter(function (k) { return !want.checks[k]; });
+    if (checkGone.length) {
+      var res = await Promise.all(checkGone.map(function (k) {
+        var p = k.split("|");
+        return sb.from("task_checks").delete()
+          .eq("task_id", p[0]).eq("week_monday", p[1]).eq("weekday", Number(p[2]));
+      }));
+      res.forEach(fail);
+      checkGone.forEach(function (k) { delete srv.checks[k]; });
+    }
+
+    // 6. tarefas removidas
+    var taskGone = Object.keys(srv.tasks).filter(function (id) { return !want.tasks[id]; });
+    if (taskGone.length) {
+      fail(await sb.from("tasks").delete().in("id", taskGone));
+      taskGone.forEach(function (id) { delete srv.tasks[id]; });
+    }
+
+    // 7. abas removidas, por último — apagar a aba leva junto o que sobrou dela
+    var catGone = Object.keys(srv.cats).filter(function (id) { return !want.cats[id]; });
+    if (catGone.length) {
+      fail(await sb.from("categories").delete().in("id", catGone));
+      catGone.forEach(function (id) { delete srv.cats[id]; });
+    }
+  }
+
+  /* ---------- busca ---------- */
+
+  async function pullOnce() {
+    var res = await Promise.all([
+      sb.from("profiles").select("display_name,theme").eq("id", currentUser.id).maybeSingle(),
+      sb.from("categories").select("id,label,palette,sort_order").order("sort_order", { ascending: true }),
+      sb.from("tasks").select("id,category_id,kind,title,note,days,due_date,time_of_day,done,created_at"),
+      sb.from("task_checks").select("task_id,week_monday,weekday")
+    ]);
+    res.forEach(function (r) { if (r.error) throw r.error; });
+    return {
+      profile: res[0].data || null,
+      cats: res[1].data || [],
+      tasks: res[2].data || [],
+      checks: res[3].data || []
+    };
+  }
+
+  // Reconstrói o formato que a tela usa a partir das linhas do banco.
+  function stateFromServer(d) {
+    var st = {
+      categories: d.cats.map(function (c) { return { id: c.id, label: c.label, palette: c.palette }; }),
+      userName: (d.profile && d.profile.display_name) || "",
+      theme: (d.profile && d.profile.theme) || null,
+      viewingWeek: (state && state.viewingWeek) || mondayOf(new Date()),
+      activeTab: (state && state.activeTab) || OVERVIEW_ID,
+      overviewSeen: true,
+      seedVersion: SEED_VERSION,
+      hardResetVersion: HARD_RESET_VERSION
+    };
+    st.categories.forEach(function (c) { st[c.id] = { schedule: [], projects: [] }; });
+
+    var porId = {};
+    d.tasks.forEach(function (r) {
+      if (!st[r.category_id]) return;   // aba que não veio junto: ignora, não quebra
+      var nasceu = Date.parse(r.created_at) || Date.now();
+      if (r.kind === "schedule") {
+        var it = {
+          id: r.id, title: r.title || "", note: r.note || "",
+          days: (r.days || []).slice(), time: r.time_of_day || "",
+          doneMap: {}, createdAt: nasceu
+        };
+        st[r.category_id].schedule.push(it);
+        porId[r.id] = it;
+      } else {
+        st[r.category_id].projects.push({
+          id: r.id, text: r.title || "", date: r.due_date || null,
+          time: r.time_of_day || "", done: !!r.done, createdAt: nasceu
+        });
+      }
+    });
+
+    d.checks.forEach(function (r) {
+      var it = porId[r.task_id];
+      if (!it) return;
+      if (!it.doneMap[r.week_monday]) it.doneMap[r.week_monday] = {};
+      it.doneMap[r.week_monday][r.weekday] = true;
+    });
+
+    st.categories.forEach(function (c) {
+      st[c.id].schedule.sort(function (a, b) { return a.createdAt - b.createdAt; });
+      st[c.id].projects.sort(function (a, b) { return a.createdAt - b.createdAt; });
+    });
+
+    return ensureShape(st);
+  }
+
+  /* ---------- busca automática ----------
+     Nunca durante uma edição: um render no meio apagaria o que está sendo
+     digitado. E nunca com alteração local pendente: ela tem prioridade,
+     senão a busca desfaria o que acabou de ser feito. */
+
   var PULL_EVERY_MS = 60000;
   var PULL_MIN_GAP_MS = 15000;
   var lastPullAt = 0;
 
+  function pullBloqueado() {
+    return !currentUser || editingId || formOpen || settingsOpen || localDirty || pushing;
+  }
+
   function maybePull(force) {
-    if (editingId || formOpen || settingsOpen) return;
+    if (pullBloqueado()) return;
     if (document.hidden) return;
     if (!force && Date.now() - lastPullAt < PULL_MIN_GAP_MS) return;
-    syncPull();
+    lastPullAt = Date.now();
+
+    pullOnce().then(function (d) {
+      if (!d.cats.length) return;      // conta ainda vazia: nada a trazer
+      if (pullBloqueado()) return;     // algo mudou enquanto a busca ia e voltava
+
+      var anterior = state;
+      state = stateFromServer(d);
+      var want = desiredRows();
+      var igual = fpOf(want.profile) === anterior.srv.profile
+        && sameFps(want.cats, anterior.srv.cats)
+        && sameFps(want.tasks, anterior.srv.tasks)
+        && sameFps(want.checks, anterior.srv.checks, true);
+      if (igual) { state = anterior; return; }
+
+      markServerClean();
+      persistQuiet();
+      applyTheme();
+      render();
+    }).catch(function () {});
   }
 
   document.addEventListener("visibilitychange", function () {
@@ -2179,14 +2397,195 @@
   window.setInterval(function () { maybePull(false); }, PULL_EVERY_MS);
 
   /* =========================================================
+     ENTRAR NA CONTA
+     ========================================================= */
+
+  var elAuthWrap = document.getElementById("authwrap");
+  var elAuthForm = document.getElementById("authForm");
+  var elAuthEmail = document.getElementById("authEmail");
+  var elAuthPass = document.getElementById("authPass");
+  var elAuthMsg = document.getElementById("authMsg");
+  var elAuthGo = document.getElementById("authGo");
+  var elAuthSwitch = document.getElementById("authSwitch");
+  var elAuthSub = document.getElementById("authSub");
+  var elPage = document.querySelector(".page");
+
+  var authMode = "signup";
+
+  function authMsg(texto, tipo) {
+    if (!texto) { elAuthMsg.hidden = true; return; }
+    elAuthMsg.hidden = false;
+    elAuthMsg.textContent = texto;
+    elAuthMsg.setAttribute("data-kind", tipo || "info");
+  }
+
+  function renderAuthMode() {
+    var novo = authMode === "signup";
+    elAuthGo.textContent = novo ? "Criar conta" : "Entrar";
+    elAuthSub.textContent = novo
+      ? "Crie sua conta uma vez. Depois é só abrir — o app te mantém dentro."
+      : "Entre com a conta que você já criou. Só uma vez em cada aparelho.";
+    elAuthSwitch.textContent = novo ? "Já tenho conta — entrar" : "Ainda não tenho conta — criar";
+    elAuthPass.setAttribute("autocomplete", novo ? "new-password" : "current-password");
+    authMsg("");
+  }
+
+  function showAuth() {
+    elPage.style.display = "none";
+    elAuthWrap.hidden = false;
+    renderAuthMode();
+    elAuthGo.disabled = false;
+  }
+
+  function hideAuth() {
+    elAuthWrap.hidden = true;
+    elPage.style.display = "";
+  }
+
+  elAuthSwitch.addEventListener("click", function () {
+    authMode = authMode === "signup" ? "login" : "signup";
+    renderAuthMode();
+  });
+
+  elAuthForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    doAuth();
+  });
+
+  async function doAuth() {
+    var email = (elAuthEmail.value || "").trim();
+    var senha = elAuthPass.value || "";
+    if (!email || email.indexOf("@") < 1) {
+      authMsg("Digite um e-mail válido.", "erro"); elAuthEmail.focus(); return;
+    }
+    if (senha.length < 6) {
+      authMsg("A senha precisa ter pelo menos 6 caracteres.", "erro"); elAuthPass.focus(); return;
+    }
+
+    elAuthGo.disabled = true;
+    authMsg(authMode === "signup" ? "Criando sua conta…" : "Entrando…");
+
+    try {
+      var r = authMode === "signup"
+        ? await sb.auth.signUp({ email: email, password: senha })
+        : await sb.auth.signInWithPassword({ email: email, password: senha });
+      if (r.error) throw r.error;
+
+      if (!r.data || !r.data.session) {
+        // Acontece se a confirmação por e-mail estiver ligada no painel.
+        authMode = "login";
+        renderAuthMode();
+        authMsg("Conta criada. Confirme pelo e-mail e depois entre aqui.", "info");
+        elAuthGo.disabled = false;
+        return;
+      }
+
+      elAuthPass.value = "";
+      await startSession(r.data.session.user);
+    } catch (err) {
+      authMsg(authErrorText(err), "erro");
+      elAuthGo.disabled = false;
+    }
+  }
+
+  function authErrorText(err) {
+    var m = ((err && (err.message || err.error_description)) || "").toLowerCase();
+    if (m.indexOf("already registered") !== -1 || m.indexOf("already been registered") !== -1)
+      return "Esse e-mail já tem conta. Toque em “Já tenho conta — entrar”.";
+    if (m.indexOf("invalid login") !== -1 || m.indexOf("invalid credentials") !== -1)
+      return "E-mail ou senha não conferem.";
+    if (m.indexOf("email not confirmed") !== -1)
+      return "Esta conta ainda precisa ser confirmada pelo e-mail.";
+    if (m.indexOf("failed to fetch") !== -1 || m.indexOf("networkerror") !== -1)
+      return "Sem conexão com o servidor. Verifique a internet e tente de novo.";
+    if (m.indexOf("rate limit") !== -1 || m.indexOf("too many") !== -1)
+      return "Muitas tentativas seguidas. Espere um minuto e tente de novo.";
+    return (err && err.message) ? err.message : "Não deu para concluir. Tente de novo.";
+  }
+
+  // Monta o app para uma conta: decide de onde vêm os dados e liga o sincronismo.
+  async function startSession(user) {
+    currentUser = user;
+    STORAGE_KEY = "checklist_u_" + user.id;
+
+    var temLocal = !!localStorage.getItem(STORAGE_KEY);
+    state = temLocal ? load() : ensureShape(defaultState());
+
+    var servidor = null;
+    try { servidor = await pullOnce(); } catch (e) { servidor = null; }
+
+    // A primeira checagem é por TAREFAS, não por abas, de propósito: uma conta
+    // criada num aparelho vazio nasce com as abas padrão e nenhuma tarefa. Se
+    // o teste fosse por abas, entrar depois no computador onde as tarefas de
+    // verdade estão faria esse servidor "vazio" vencer e elas se perderiam.
+    var doAparelho = temLocal ? null : readDeviceState();
+
+    if (servidor && servidor.tasks.length) {
+      // A conta já tem conteúdo: o servidor é a verdade.
+      state = stateFromServer(servidor);
+      markServerClean();
+    } else if (doAparelho) {
+      // Conta sem tarefas e este navegador tinha um checklist de antes das
+      // contas: ele sobe em vez de se perder. É a migração única.
+      state = doAparelho;
+      markServerEmpty();
+    } else if (servidor && servidor.cats.length) {
+      // Conta sem tarefas mas com abas já criadas noutro aparelho: aproveita.
+      state = stateFromServer(servidor);
+      markServerClean();
+    } else if (!temLocal) {
+      // Conta nova e aparelho sem nada: começa do zero, com as abas padrão.
+      state = ensureShape(defaultState());
+      markServerEmpty();
+    } else {
+      // Havia cópia local desta conta, mas o servidor está vazio ou fora do ar.
+      markServerEmpty();
+    }
+
+    // A limpeza geral (HARD_RESET) é uma ferramenta de desenvolvimento e não
+    // pode disparar sozinha sobre dados de uma conta real — só o seed leve,
+    // que apenas remove exemplos antigos, continua valendo.
+    state.hardResetVersion = HARD_RESET_VERSION;
+    seedChanged = applySeedUpdates(state);
+
+    persistQuiet();
+    hideAuth();
+    applyTheme();
+    render();
+    if (seedChanged) showToast("Cronograma atualizado.");
+    lastPullAt = Date.now();
+    if (localDirty) schedulePush();
+  }
+
+  async function signOut() {
+    try { await sb.auth.signOut(); } catch (e) {}
+    // A cópia local sai junto: as tarefas seguem guardadas na conta, mas quem
+    // pegar este aparelho depois não deve encontrá-las no navegador.
+    try {
+      if (STORAGE_KEY) localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(DEVICE_KEY);
+      localStorage.removeItem(DEVICE_KEY_LEGACY);
+    } catch (e) {}
+    currentUser = null;
+    STORAGE_KEY = null;
+    location.reload();
+  }
+
+  /* =========================================================
      BOOT
      ========================================================= */
 
+  // O tema é aplicado antes de qualquer coisa para a tela de entrada já
+  // aparecer na aparência certa. Depois do login o tema da conta assume.
   applyTheme();
-  render();
-  if (hardReset) showToast("Tudo limpo — comece do zero.");
-  else if (seedChanged) showToast("Cronograma atualizado.");
-  syncPull();
+
+  // Se já existe sessão guardada neste aparelho, entra direto — é o
+  // "cadastre uma vez e nunca mais". Senão, mostra a tela de entrada.
+  sb.auth.getSession().then(function (r) {
+    var sessao = r && r.data && r.data.session;
+    if (sessao && sessao.user) return startSession(sessao.user);
+    showAuth();
+  }).catch(function () { showAuth(); });
 
   /* ---- deslizar entre páginas ---- */
   var swipeEl = document.querySelector(".page");
