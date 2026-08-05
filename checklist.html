@@ -1982,6 +1982,15 @@
     return JSON.stringify([payload.category, payload.kind, payload.title, payload.note, payload.days.slice().sort(), payload.date, payload.done]);
   }
 
+  // Assinatura do que veio do Notion, normalizada pelo mesmo caminho do item
+  // local — só assim as duas são comparáveis campo a campo.
+  function remoteFingerprint(remote) {
+    var pseudo = remote.kind === "once"
+      ? { id: remote.appId, text: remote.title, date: remote.date || null, done: !!remote.done }
+      : { id: remote.appId, title: remote.title, note: remote.note || "", days: (remote.days || []).slice() };
+    return syncFingerprint(taskToSyncPayload(remote.category, remote.kind, pseudo));
+  }
+
   // O Notion tem uma lista fixa de negócios, criada antes das abas virarem
   // editáveis. Abas novas não cabem lá, então ficam só no aparelho até o
   // servidor próprio entrar no lugar do Notion. Sem esta guarda, cada tarefa
@@ -2099,8 +2108,20 @@
     }
 
     var meta = state.syncMeta[local.item.id];
-    if (meta && meta.remoteUpdatedAt === remote.updatedAt) return false;
     if (local.kind !== remote.kind || local.catId !== remote.category) return false;
+
+    // Comparar conteúdo, não carimbo de hora. O Notion arredonda o
+    // last_edited_time para o minuto, então marcar e desmarcar dentro do mesmo
+    // minuto chegava com o carimbo idêntico e a segunda alteração era
+    // descartada como "já vista" — desmarcar não sincronizava.
+    var localFp = syncFingerprint(taskToSyncPayload(local.catId, local.kind, local.item));
+    if (remoteFingerprint(remote) === localFp) {
+      if (meta) meta.remoteUpdatedAt = remote.updatedAt;
+      return false;
+    }
+    // Conteúdo diferente. Se o local mudou e ainda não subiu, ele tem
+    // prioridade — senão a busca automática desfaria o que acabou de ser feito.
+    if (meta && meta.fp !== localFp) return false;
 
     if (remote.kind === "once") {
       local.item.text = remote.title;
