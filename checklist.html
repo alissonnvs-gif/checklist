@@ -1662,6 +1662,7 @@
 
   function syncPull() {
     if (!SYNC_API_BASE) return;
+    lastPullAt = Date.now();
     fetch(SYNC_API_BASE + "/api/schedule", { headers: { "X-App-Key": SYNC_APP_KEY } })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
       .then(function (data) {
@@ -1673,6 +1674,27 @@
       })
       .catch(function () {});
   }
+
+  // Busca automática. O app só recebia novidades ao abrir do zero — no celular
+  // isso quase nunca acontece, porque a aba fica viva ao trocar de aplicativo.
+  // Aqui ele volta a buscar sempre que a tela reaparece e de minuto em minuto.
+  // Nunca durante uma edição: um render no meio apagaria o que está sendo digitado.
+  var PULL_EVERY_MS = 60000;
+  var PULL_MIN_GAP_MS = 15000;
+  var lastPullAt = 0;
+
+  function maybePull(force) {
+    if (editingId || formOpen) return;
+    if (document.hidden) return;
+    if (!force && Date.now() - lastPullAt < PULL_MIN_GAP_MS) return;
+    syncPull();
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) maybePull(true);
+  });
+  window.addEventListener("focus", function () { maybePull(true); });
+  window.setInterval(function () { maybePull(false); }, PULL_EVERY_MS);
 
   /* =========================================================
      BOOT
