@@ -118,7 +118,80 @@
   .wordmark { font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif; font-size: 1.02rem; line-height: 1; }
   .datestamp { font-size: 0.66rem; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-2); }
 
+  .top-right { display: flex; align-items: center; gap: 8px; flex: none; }
   .themeswitch { display: flex; gap: 3px; padding: 4px; border-radius: 999px; flex: none; }
+
+  .gearbtn {
+    width: 38px; height: 38px; border-radius: 13px;
+    border: 0; padding: 0; cursor: pointer; flex: none;
+    display: grid; place-content: center; color: var(--ink-2);
+    transition: color 0.16s ease, transform 0.3s ease;
+  }
+  .gearbtn:hover { color: var(--ink); }
+  .gearbtn svg { width: 17px; height: 17px; display: block; }
+  .gearbtn svg path, .gearbtn svg circle {
+    stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; fill: none;
+  }
+  .gearbtn[aria-expanded="true"] { color: var(--ink); transform: rotate(60deg); }
+
+  /* ---- tela de configurações ---- */
+  .settings { display: flex; flex-direction: column; gap: 22px; }
+
+  .set-block { border-radius: 22px; padding: 18px; }
+  .set-title { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; margin: 0 0 4px; }
+  .set-help { font-size: 0.76rem; line-height: 1.45; color: var(--ink-2); margin: 0 0 14px; }
+
+  .catrow { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+  .catrow + .catrow { border-top: 1px solid color-mix(in srgb, var(--ink) 10%, transparent); }
+
+  .catrow-dot {
+    width: 14px; height: 14px; border-radius: 5px; flex: none;
+    background: linear-gradient(150deg, var(--c1), var(--c2));
+    box-shadow: 0 0 8px 0 var(--c2), inset 0 1px 0 rgba(255,255,255,0.6);
+  }
+
+  .catrow-name {
+    flex: 1; min-width: 0; border: 0; background: transparent;
+    font-family: inherit; font-size: 0.88rem; font-weight: 500; color: var(--ink);
+    padding: 6px 2px; border-bottom: 1.5px dashed color-mix(in srgb, var(--ink) 22%, transparent);
+    outline: none; border-radius: 0;
+  }
+  .catrow-name:focus { border-bottom-style: solid; border-bottom-color: var(--c2); }
+
+  .catrow-acts { display: flex; gap: 4px; flex: none; }
+
+  .miniicon {
+    width: 28px; height: 28px; border-radius: 9px; border: 0; padding: 0; cursor: pointer;
+    display: grid; place-content: center; color: var(--ink-2);
+    background: linear-gradient(180deg, var(--well-a), var(--well-b));
+    box-shadow: inset 0 1.5px 3px var(--well-in);
+    transition: color 0.16s ease;
+  }
+  .miniicon:hover { color: var(--ink); }
+  .miniicon:disabled { opacity: 0.3; cursor: default; }
+  .miniicon svg { width: 14px; height: 14px; display: block; }
+  .miniicon svg path { stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  .miniicon[data-danger="armed"] {
+    color: #fff; background: linear-gradient(150deg, #FF8A6B, #E33F1C);
+    box-shadow: inset 0 1.5px 1.5px rgba(255,255,255,0.5), 0 0 10px -2px #E33F1C;
+  }
+
+  .swatches { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 0 10px 24px; }
+  .swatch {
+    width: 26px; height: 26px; border-radius: 9px; border: 0; cursor: pointer; padding: 0;
+    box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.55), inset 0 0 0 1px var(--f-rim);
+  }
+  .swatch[aria-pressed="true"] { box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.7), 0 0 0 2px var(--ink); }
+
+  .danger-box { padding: 10px 0 4px 24px; display: flex; flex-direction: column; gap: 9px; }
+  .danger-msg { font-size: 0.78rem; line-height: 1.4; color: var(--ink-2); }
+  .danger-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .sel {
+    border: 0; border-radius: 11px; padding: 9px 11px;
+    font-family: inherit; font-size: 0.8rem; color: var(--ink);
+    background: linear-gradient(180deg, var(--well-a), var(--well-b));
+    box-shadow: inset 0 1.5px 3px var(--well-in); outline: none;
+  }
   .th { border: 0; background: transparent; font-size: 0.68rem; font-weight: 500; color: var(--ink-2); padding: 6px 13px; border-radius: 999px; cursor: pointer; }
   .th[aria-pressed="true"] {
     color: var(--ink);
@@ -147,8 +220,8 @@
   .bar-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); width: 52px; flex: none; }
   .track { position: relative; flex: 1; height: 6px; border-radius: 999px; background: linear-gradient(180deg, var(--well-a), var(--well-b)); box-shadow: inset 0 1.5px 2.5px var(--well-in), inset 0 -1px 0 var(--f-bot); }
   .fill { position: absolute; top: 1px; bottom: 1px; left: 1px; border-radius: 999px; transition: width 0.5s cubic-bezier(0.4,0,0.2,1); }
-  .fill-a { background: linear-gradient(90deg, var(--bc-2), var(--ls-2) 55%, var(--lm-2)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 0 7px 0 rgba(255,140,90,0.55); }
-  .fill-b { background: linear-gradient(90deg, var(--ps-2), var(--bc-2)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 0 7px 0 rgba(140,150,255,0.6); }
+  .fill-a { background: var(--all-grad); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 0 7px 0 rgba(255,255,255,0.25); }
+  .fill-b { background: var(--all-grad-2); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 0 7px 0 rgba(255,255,255,0.25); }
   .fill-cat { background: linear-gradient(90deg, var(--c1), var(--c2)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 0 7px 0 var(--c2); }
   .bar-count { font-size: 0.7rem; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink-2); width: 42px; flex: none; text-align: right; }
 
@@ -159,7 +232,7 @@
   .cat { display: flex; align-items: center; gap: 7px; flex: none; border: 0; border-radius: 999px; padding: 9px 15px; font-size: 0.72rem; font-weight: 500; letter-spacing: 0.02em; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
   .cat[aria-pressed="true"] { color: var(--ink); font-weight: 600; }
   .cat-dot { width: 9px; height: 9px; border-radius: 3px; background: linear-gradient(150deg, var(--c1), var(--c2)); box-shadow: 0 0 7px 0 var(--c2), inset 0 1px 0 rgba(255,255,255,0.6); flex: none; }
-  .cat-dot-all { background: conic-gradient(var(--bc-2), var(--lm-2), var(--ls-2), var(--ps-2), var(--bc-2)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.5); }
+  .cat-dot-all { background: var(--all-conic); box-shadow: inset 0 1px 0 rgba(255,255,255,0.5); }
 
   /* ================= WEEK BAR ================= */
 
@@ -361,11 +434,10 @@
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
+<style id="catStyles"></style>
+
 <div class="bg-layer" id="bg">
-  <div class="bg-orb" data-c="blueCrab"  style="width:340px;height:340px;top:-110px;left:-100px;background:radial-gradient(circle,#B87CFF,transparent 70%)"></div>
-  <div class="bg-orb" data-c="loomStore" style="width:300px;height:300px;top:22%;right:-120px;background:radial-gradient(circle,#FF6F4E,transparent 70%)"></div>
-  <div class="bg-orb" data-c="loom"      style="width:320px;height:320px;top:58%;left:-130px;background:radial-gradient(circle,#4FD97A,transparent 70%)"></div>
-  <div class="bg-orb" data-c="pessoal"   style="width:360px;height:360px;bottom:-140px;right:-110px;background:radial-gradient(circle,#63D9F5,transparent 70%)"></div>
+  <div id="orbs"></div>
   <div class="bg-grain"></div>
 </div>
 
@@ -375,9 +447,14 @@
       <span class="wordmark">Checklist</span>
       <span class="datestamp" id="datestamp"></span>
     </div>
-    <div class="gl gl-clear themeswitch" role="group" aria-label="Tema">
-      <button class="th" type="button" data-set="dia">Dia</button>
-      <button class="th" type="button" data-set="noite">Noite</button>
+    <div class="top-right">
+      <div class="gl gl-clear themeswitch" role="group" aria-label="Tema">
+        <button class="th" type="button" data-set="dia">Dia</button>
+        <button class="th" type="button" data-set="noite">Noite</button>
+      </div>
+      <button class="gl gl-clear gearbtn" id="gearbtn" type="button" aria-label="Configurações" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10 3.17V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
     </div>
   </header>
 
@@ -392,7 +469,7 @@
 
   <main id="body"></main>
 
-  <div class="addrow">
+  <div class="addrow" id="addrow">
     <button class="gl gl-white newbtn" id="newbtn" type="button" aria-expanded="false">
       <span class="newbtn-chip"><svg class="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5 V19 M5 12 H19"></path></svg></span>
       <span id="newbtnLabel">Nova tarefa</span>
@@ -420,12 +497,35 @@
   var STORAGE_KEY = "checklist_negocios_v3";
   var STORAGE_KEY_LEGACY = "checklist_negocios_v2";
 
-  var CATEGORIES = [
-    { id: "blueCrab",  label: "Blue Crab",  short: "bc" },
-    { id: "loom",      label: "LOOM",       short: "lm" },
-    { id: "loomStore", label: "LOOM Store", short: "ls" },
-    { id: "pessoal",   label: "Pessoal",    short: "ps" }
+  // Paletas prontas em vez de seletor livre de cor. Cor solta quebraria o
+  // visual: um amarelo bonito some no tema Dia. Cada dupla foi ajustada nos
+  // dois temas e tem sua versão fechada para texto — a cor que funciona como
+  // luz atrás do vidro não funciona como tipografia sobre fundo claro.
+  var PALETTES = [
+    { id: "violeta",  label: "Violeta",  c1: "#8593FF", c2: "#B87CFF", inkDia: "#6A4BD4", inkNoite: "#C9AEFF" },
+    { id: "verde",    label: "Verde",    c1: "#4FD97A", c2: "#AEE85C", inkDia: "#4A8C1C", inkNoite: "#C6EF7C" },
+    { id: "coral",    label: "Coral",    c1: "#FFAD86", c2: "#FF6F4E", inkDia: "#D2451F", inkNoite: "#FF9C7E" },
+    { id: "azul",     label: "Azul",     c1: "#63D9F5", c2: "#7290FF", inkDia: "#3B60D6", inkNoite: "#A6BAFF" },
+    { id: "rosa",     label: "Rosa",     c1: "#FF9ECF", c2: "#F2569F", inkDia: "#C02472", inkNoite: "#FFAEDA" },
+    { id: "ambar",    label: "Âmbar",    c1: "#FFD37A", c2: "#FFA332", inkDia: "#A06012", inkNoite: "#FFD08A" },
+    { id: "turquesa", label: "Turquesa", c1: "#5FE0C8", c2: "#2FB6C4", inkDia: "#0E7C86", inkNoite: "#8AE8DC" },
+    { id: "ardosia",  label: "Ardósia",  c1: "#A8B4CC", c2: "#6E7C99", inkDia: "#4C5773", inkNoite: "#C3CCDD" }
   ];
+
+  // Ponto de partida para quem abre o app pela primeira vez. A partir daí as
+  // abas são dado editável em state.categories, não código.
+  var DEFAULT_CATEGORIES = [
+    { id: "blueCrab",  label: "Blue Crab",  palette: "violeta" },
+    { id: "loom",      label: "LOOM",       palette: "verde" },
+    { id: "loomStore", label: "LOOM Store", palette: "coral" },
+    { id: "pessoal",   label: "Pessoal",    palette: "azul" }
+  ];
+
+  function cats() { return state.categories; }
+
+  function paletteOf(pid) {
+    return PALETTES.filter(function (p) { return p.id === pid; })[0] || PALETTES[0];
+  }
 
   var OVERVIEW_ID = "overview";
   var OVERVIEW_DAYS = 7;
@@ -510,8 +610,13 @@
   }
 
   function defaultState() {
-    var s = { activeTab: OVERVIEW_ID, viewingWeek: mondayOf(new Date()), seedVersion: SEED_VERSION };
-    CATEGORIES.forEach(function (cat) {
+    var s = {
+      activeTab: OVERVIEW_ID,
+      viewingWeek: mondayOf(new Date()),
+      seedVersion: SEED_VERSION,
+      categories: DEFAULT_CATEGORIES.map(function (c) { return { id: c.id, label: c.label, palette: c.palette }; })
+    };
+    DEFAULT_CATEGORIES.forEach(function (cat) {
       s[cat.id] = {
         schedule: TASK_SEED[cat.id].map(mkScheduleItem),
         projects: PROJECT_SEED[cat.id].map(mkProjectTask)
@@ -522,7 +627,7 @@
 
   function migrateFromLegacy(oldParsed) {
     var monday = mondayOf(new Date());
-    CATEGORIES.forEach(function (cat) {
+    DEFAULT_CATEGORIES.forEach(function (cat) {
       var bucket = oldParsed[cat.id];
       if (!bucket) return;
       (bucket.schedule || []).forEach(function (it) {
@@ -538,7 +643,19 @@
   }
 
   function ensureShape(parsed) {
-    CATEGORIES.forEach(function (cat) {
+    // As abas viraram dado editável. Quem já tinha o app salvo antes disso
+    // recebe as quatro originais como ponto de partida, preservando os dados.
+    if (!Array.isArray(parsed.categories) || !parsed.categories.length) {
+      parsed.categories = DEFAULT_CATEGORIES.map(function (c) {
+        return { id: c.id, label: c.label, palette: c.palette };
+      });
+    }
+    parsed.categories.forEach(function (c) {
+      if (!c.palette || !PALETTES.filter(function (p) { return p.id === c.palette; }).length) c.palette = PALETTES[0].id;
+      if (typeof c.label !== "string" || !c.label.trim()) c.label = "Sem nome";
+    });
+
+    parsed.categories.forEach(function (cat) {
       if (!parsed[cat.id]) parsed[cat.id] = { schedule: [], projects: [] };
       var bucket = parsed[cat.id];
       if (!bucket.schedule) bucket.schedule = [];
@@ -561,20 +678,27 @@
     if (!parsed.overviewSeen) { parsed.activeTab = OVERVIEW_ID; parsed.overviewSeen = true; }
     if (typeof parsed.userName !== "string") parsed.userName = "";
     if (parsed.theme !== "dia" && parsed.theme !== "noite") parsed.theme = null;
+    // A aba ativa pode apontar para uma aba que foi excluída.
+    if (parsed.activeTab !== OVERVIEW_ID &&
+        !parsed.categories.filter(function (c) { return c.id === parsed.activeTab; }).length) {
+      parsed.activeTab = OVERVIEW_ID;
+    }
     return parsed;
   }
 
   function applyHardReset(parsed) {
     if (parsed.hardResetVersion >= HARD_RESET_VERSION) return false;
-    CATEGORIES.forEach(function (cat) { parsed[cat.id] = { schedule: [], projects: [] }; });
+    parsed.categories.forEach(function (cat) { parsed[cat.id] = { schedule: [], projects: [] }; });
     parsed.hardResetVersion = HARD_RESET_VERSION;
     return true;
   }
 
   function applySeedUpdates(parsed) {
     if (parsed.seedVersion >= SEED_VERSION) return false;
-    CATEGORIES.forEach(function (cat) {
+    // O seed só conhece as quatro abas originais.
+    DEFAULT_CATEGORIES.forEach(function (cat) {
       var bucket = parsed[cat.id];
+      if (!bucket) return;
       TASK_SEED[cat.id].forEach(function (def) {
         var existing = bucket.schedule.filter(function (it) { return it.id === def.id; })[0];
         if (existing) {
@@ -625,6 +749,7 @@
   var editingId = null;
   var formOpen = false;
   var draft = null;
+  var settingsOpen = false;
 
   var today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -643,6 +768,10 @@
   var elNewBtn = document.getElementById("newbtn");
   var elNewLabel = document.getElementById("newbtnLabel");
   var elToast = document.getElementById("toast");
+  var elCatStyles = document.getElementById("catStyles");
+  var elOrbs = document.getElementById("orbs");
+  var elAddRow = document.getElementById("addrow");
+  var elGear = document.getElementById("gearbtn");
 
   elDate.textContent = today.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 
@@ -653,11 +782,32 @@
     showToast._t = window.setTimeout(function () { elToast.setAttribute("data-show", "false"); }, 2600);
   }
 
-  function catOf(id) { return CATEGORIES.filter(function (c) { return c.id === id; })[0]; }
+  function catOf(id) { return cats().filter(function (c) { return c.id === id; })[0]; }
 
   function catVars(id) {
-    var c = catOf(id);
-    return "--c1:var(--" + c.short + "-1); --c2:var(--" + c.short + "-2); --c-ink:var(--" + c.short + "-ink)";
+    return "--c1:var(--cat-" + id + "-1); --c2:var(--cat-" + id + "-2); --c-ink:var(--cat-" + id + "-ink)";
+  }
+
+  // Escreve as cores das abas como variáveis CSS num <style>, em vez de estilo
+  // inline. Assim a troca de tema acontece sozinha pelo CSS, sem redesenhar.
+  function renderCatStyles() {
+    var dia = [], noite = [], tons = [];
+    cats().forEach(function (c) {
+      var p = paletteOf(c.palette);
+      dia.push("--cat-" + c.id + "-1:" + p.c1 + ";--cat-" + c.id + "-2:" + p.c2 + ";--cat-" + c.id + "-ink:" + p.inkDia + ";");
+      noite.push("--cat-" + c.id + "-ink:" + p.inkNoite + ";");
+      tons.push(p.c2);
+    });
+    if (!tons.length) tons = ["#B87CFF", "#FF6F4E"];
+    if (tons.length === 1) tons = [tons[0], tons[0]];
+
+    var grad = "linear-gradient(90deg," + tons.join(",") + ")";
+    var gradRev = "linear-gradient(90deg," + tons.slice().reverse().join(",") + ")";
+    var conic = "conic-gradient(" + tons.concat([tons[0]]).join(",") + ")";
+
+    elCatStyles.textContent =
+      ":root{" + dia.join("") + "--all-grad:" + grad + ";--all-grad-2:" + gradRev + ";--all-conic:" + conic + ";}" +
+      ':root[data-theme="noite"]{' + noite.join("") + "}";
   }
 
   function el(tag, cls, txt) {
@@ -737,7 +887,7 @@
     else occ.item.done = !occ.done;
   }
 
-  function allCatIds() { return CATEGORIES.map(function (c) { return c.id; }); }
+  function allCatIds() { return cats().map(function (c) { return c.id; }); }
 
   function activeCatIds() {
     return state.activeTab === OVERVIEW_ID ? allCatIds() : [state.activeTab];
@@ -840,7 +990,7 @@
 
   function makeDraft(occ) {
     if (!occ) {
-      var cat = state.activeTab === OVERVIEW_ID ? CATEGORIES[0].id : state.activeTab;
+      var cat = state.activeTab === OVERVIEW_ID ? (cats()[0] || {}).id : state.activeTab;
       return { mode: "new", catId: cat, title: "", note: "", kind: "schedule", days: [], date: "", time: "" };
     }
     var it = occ.item;
@@ -876,7 +1026,7 @@
       var fCat = el("div", "field");
       fCat.appendChild(el("span", "field-label", "Negócio"));
       var catPicks = el("div", "picks");
-      CATEGORIES.forEach(function (c) {
+      cats().forEach(function (c) {
         var b = el("button", "pick", c.label);
         b.type = "button";
         b.setAttribute("style", catVars(c.id));
@@ -885,7 +1035,7 @@
           draft.catId = c.id;
           wrap.setAttribute("style", catVars(c.id));
           [].slice.call(catPicks.children).forEach(function (x, i) {
-            x.setAttribute("aria-pressed", String(CATEGORIES[i].id === c.id));
+            x.setAttribute("aria-pressed", String(cats()[i].id === c.id));
           });
         });
         catPicks.appendChild(b);
@@ -1340,7 +1490,7 @@
     }
 
     elCats.appendChild(mk(OVERVIEW_ID, "Geral", true));
-    CATEGORIES.forEach(function (c) { elCats.appendChild(mk(c.id, c.label, false)); });
+    cats().forEach(function (c) { elCats.appendChild(mk(c.id, c.label, false)); });
   }
 
   function renderWeekBar() {
@@ -1425,11 +1575,27 @@
     elWeekSlot.appendChild(wrap);
   }
 
+  // Uma luz por aba, em posições que se repetem em ciclo se houver muitas.
+  var ORB_SPOTS = [
+    "width:340px;height:340px;top:-110px;left:-100px",
+    "width:300px;height:300px;top:22%;right:-120px",
+    "width:320px;height:320px;top:58%;left:-130px",
+    "width:360px;height:360px;bottom:-140px;right:-110px",
+    "width:280px;height:280px;top:40%;right:-90px",
+    "width:300px;height:300px;top:80%;left:-110px"
+  ];
+
   function renderBg() {
-    [].slice.call(document.querySelectorAll(".bg-orb")).forEach(function (o) {
-      var c = o.getAttribute("data-c");
-      if (state.activeTab === OVERVIEW_ID) o.style.opacity = "0.34";
-      else o.style.opacity = (c === state.activeTab) ? "0.55" : "0.06";
+    elOrbs.innerHTML = "";
+    cats().forEach(function (c, i) {
+      var p = paletteOf(c.palette);
+      var o = el("div", "bg-orb");
+      o.setAttribute("style", ORB_SPOTS[i % ORB_SPOTS.length] +
+        ";background:radial-gradient(circle," + p.c2 + ",transparent 70%)");
+      o.style.opacity = state.activeTab === OVERVIEW_ID
+        ? "0.34"
+        : (c.id === state.activeTab ? "0.55" : "0.06");
+      elOrbs.appendChild(o);
     });
   }
 
@@ -1450,12 +1616,283 @@
      RENDER
      ========================================================= */
 
+  /* =========================================================
+     CONFIGURAÇÕES
+     ========================================================= */
+
+  var ICON_UP = "M12 19V5M5 12l7-7 7 7";
+  var ICON_DOWN = "M12 5v14M19 12l-7 7-7-7";
+  var ICON_PAINT = "M12 3a9 9 0 1 0 0 18 2 2 0 0 0 1.5-3.3 2 2 0 0 1 1.5-3.3H17a4 4 0 0 0 4-4A9 9 0 0 0 12 3z";
+
+  var pendingDelete = null;   // id da aba com a exclusão em andamento
+  var pendingPalette = null;  // id da aba com o seletor de cor aberto
+
+  function renderSettings() {
+    elBody.innerHTML = "";
+    var wrap = el("div", "settings");
+
+    /* --- nome --- */
+    var b1 = el("section", "gl gl-clear set-block");
+    b1.appendChild(el("h2", "set-title", "Seu nome"));
+    b1.appendChild(el("p", "set-help", "Aparece na saudação da página Geral. Por enquanto vale só neste aparelho."));
+    var inpName = el("input", "inp");
+    inpName.type = "text";
+    inpName.placeholder = "Como quer ser chamado";
+    inpName.value = state.userName;
+    inpName.addEventListener("input", function () {
+      state.userName = inpName.value.replace(/\s+/g, " ").trimStart();
+      save(true);
+    });
+    inpName.addEventListener("blur", function () {
+      state.userName = inpName.value.replace(/\s+/g, " ").trim();
+      inpName.value = state.userName;
+      save(true);
+    });
+    b1.appendChild(inpName);
+    wrap.appendChild(b1);
+
+    /* --- abas --- */
+    var b2 = el("section", "gl gl-clear set-block");
+    b2.appendChild(el("h2", "set-title", "Suas abas"));
+    b2.appendChild(el("p", "set-help", "Crie as abas da sua rotina. Toque no nome pra renomear, no pincel pra trocar a cor, e nas setas pra reordenar."));
+
+    cats().forEach(function (c, idx) {
+      b2.appendChild(catSettingRow(c, idx));
+      if (pendingPalette === c.id) b2.appendChild(palettePicker(c));
+      if (pendingDelete === c.id) b2.appendChild(deleteBox(c));
+    });
+
+    // Aviso contextual: só aparece quando existe alguma aba fora do Notion.
+    if (cats().filter(function (c) { return !syncsToNotion(c.id); }).length) {
+      var aviso = el("p", "set-help");
+      aviso.style.margin = "14px 0 0";
+      aviso.textContent = "As abas que você criou funcionam normalmente, mas ficam só neste aparelho — o Notion tem uma lista fixa de negócios. Isso deixa de ser limitação quando o app ganhar servidor próprio.";
+      b2.appendChild(aviso);
+    }
+
+    var add = el("button", "minibtn", "Adicionar aba");
+    add.type = "button";
+    add.style.marginTop = "14px";
+    add.addEventListener("click", function () {
+      var novo = { id: "c" + uid(), label: "Nova aba", palette: PALETTES[cats().length % PALETTES.length].id };
+      state.categories.push(novo);
+      state[novo.id] = { schedule: [], projects: [] };
+      pendingPalette = null;
+      pendingDelete = null;
+      save(true);
+      render();
+      var campos = elBody.querySelectorAll(".catrow-name");
+      var ultimo = campos[campos.length - 1];
+      if (ultimo) { ultimo.focus(); ultimo.select(); }
+    });
+    b2.appendChild(add);
+    wrap.appendChild(b2);
+
+    elBody.appendChild(wrap);
+  }
+
+  function catSettingRow(c, idx) {
+    var row = el("div", "catrow");
+    row.setAttribute("style", catVars(c.id));
+
+    row.appendChild(el("span", "catrow-dot"));
+
+    var nome = el("input", "catrow-name");
+    nome.type = "text";
+    nome.value = c.label;
+    nome.setAttribute("aria-label", "Nome da aba");
+    nome.addEventListener("input", function () { c.label = nome.value; save(true); });
+    nome.addEventListener("blur", function () {
+      c.label = nome.value.replace(/\s+/g, " ").trim() || "Sem nome";
+      nome.value = c.label;
+      save(true);
+      renderCats();
+    });
+    nome.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); nome.blur(); } });
+    row.appendChild(nome);
+
+    var acts = el("div", "catrow-acts");
+
+    var paint = el("button", "miniicon");
+    paint.type = "button";
+    paint.setAttribute("aria-label", "Trocar a cor");
+    paint.appendChild(svgPath(ICON_PAINT));
+    paint.addEventListener("click", function () {
+      pendingPalette = pendingPalette === c.id ? null : c.id;
+      pendingDelete = null;
+      renderSettings();
+    });
+    acts.appendChild(paint);
+
+    var up = el("button", "miniicon");
+    up.type = "button";
+    up.setAttribute("aria-label", "Mover pra cima");
+    up.appendChild(svgPath(ICON_UP));
+    up.disabled = idx === 0;
+    up.addEventListener("click", function () { moveCat(idx, -1); });
+    acts.appendChild(up);
+
+    var down = el("button", "miniicon");
+    down.type = "button";
+    down.setAttribute("aria-label", "Mover pra baixo");
+    down.appendChild(svgPath(ICON_DOWN));
+    down.disabled = idx === cats().length - 1;
+    down.addEventListener("click", function () { moveCat(idx, 1); });
+    acts.appendChild(down);
+
+    var del = el("button", "miniicon");
+    del.type = "button";
+    del.setAttribute("aria-label", "Excluir aba");
+    del.appendChild(svgPath(ICON_DEL));
+    if (pendingDelete === c.id) del.setAttribute("data-danger", "armed");
+    del.disabled = cats().length <= 1;
+    del.addEventListener("click", function () {
+      pendingDelete = pendingDelete === c.id ? null : c.id;
+      pendingPalette = null;
+      renderSettings();
+    });
+    acts.appendChild(del);
+
+    row.appendChild(acts);
+    return row;
+  }
+
+  function moveCat(idx, delta) {
+    var alvo = idx + delta;
+    if (alvo < 0 || alvo >= cats().length) return;
+    var arr = state.categories;
+    var tmp = arr[idx];
+    arr[idx] = arr[alvo];
+    arr[alvo] = tmp;
+    save(true);
+    render();
+  }
+
+  function palettePicker(c) {
+    var box = el("div", "swatches");
+    PALETTES.forEach(function (p) {
+      var b = el("button", "swatch");
+      b.type = "button";
+      b.setAttribute("aria-label", p.label);
+      b.setAttribute("aria-pressed", String(c.palette === p.id));
+      b.style.background = "linear-gradient(150deg," + p.c1 + "," + p.c2 + ")";
+      b.addEventListener("click", function () {
+        c.palette = p.id;
+        pendingPalette = null;
+        save(true);
+        render();
+      });
+      box.appendChild(b);
+    });
+    return box;
+  }
+
+  function deleteBox(c) {
+    var bucket = state[c.id] || { schedule: [], projects: [] };
+    var total = bucket.schedule.length + bucket.projects.length;
+    var box = el("div", "danger-box");
+
+    if (!total) {
+      box.appendChild(el("span", "danger-msg", "Excluir a aba " + c.label + "? Ela está vazia."));
+      var acts0 = el("div", "danger-acts");
+      var ok = el("button", "minibtn", "Excluir aba");
+      ok.type = "button";
+      ok.addEventListener("click", function () { dropCat(c, null); });
+      var no0 = el("button", "minibtn minibtn-ghost", "Cancelar");
+      no0.type = "button";
+      no0.addEventListener("click", function () { pendingDelete = null; renderSettings(); });
+      acts0.appendChild(ok);
+      acts0.appendChild(no0);
+      box.appendChild(acts0);
+      return box;
+    }
+
+    box.appendChild(el("span", "danger-msg",
+      "A aba " + c.label + " tem " + total + (total === 1 ? " tarefa" : " tarefas") + ". O que fazer com " + (total === 1 ? "ela" : "elas") + "?"));
+
+    var acts = el("div", "danger-acts");
+    var outras = cats().filter(function (x) { return x.id !== c.id; });
+
+    var sel = el("select", "sel");
+    outras.forEach(function (x) {
+      var op = document.createElement("option");
+      op.value = x.id;
+      op.textContent = x.label;
+      sel.appendChild(op);
+    });
+    acts.appendChild(sel);
+
+    var mover = el("button", "minibtn", "Mover e excluir aba");
+    mover.type = "button";
+    mover.addEventListener("click", function () { dropCat(c, sel.value); });
+    acts.appendChild(mover);
+
+    box.appendChild(acts);
+
+    var acts2 = el("div", "danger-acts");
+    var tudo = el("button", "minibtn minibtn-danger", "Excluir aba e tarefas");
+    tudo.type = "button";
+    tudo.style.marginLeft = "0";
+    var armado = false;
+    tudo.addEventListener("click", function () {
+      if (!armado) { armado = true; tudo.textContent = "Confirmar: apagar tudo"; return; }
+      dropCat(c, null);
+    });
+    acts2.appendChild(tudo);
+
+    var no = el("button", "minibtn minibtn-ghost", "Cancelar");
+    no.type = "button";
+    no.addEventListener("click", function () { pendingDelete = null; renderSettings(); });
+    acts2.appendChild(no);
+
+    box.appendChild(acts2);
+    return box;
+  }
+
+  function dropCat(c, moveToId) {
+    var bucket = state[c.id] || { schedule: [], projects: [] };
+    if (moveToId && state[moveToId]) {
+      state[moveToId].schedule = state[moveToId].schedule.concat(bucket.schedule);
+      state[moveToId].projects = state[moveToId].projects.concat(bucket.projects);
+    }
+    delete state[c.id];
+    state.categories = cats().filter(function (x) { return x.id !== c.id; });
+    if (state.activeTab === c.id) state.activeTab = OVERVIEW_ID;
+    pendingDelete = null;
+    pendingPalette = null;
+    save();
+    render();
+    showToast(moveToId ? "Aba excluída, tarefas movidas." : "Aba excluída.");
+  }
+
+  /* =========================================================
+     RENDER
+     ========================================================= */
+
   function render() {
+    renderCatStyles();
+    renderBg();
+
+    if (settingsOpen) {
+      elGreet.textContent = "Configurações";
+      elSub.textContent = "Ajuste seu nome e as abas da sua rotina.";
+      elProg.style.display = "none";
+      elCats.style.display = "none";
+      elWeekSlot.innerHTML = "";
+      elAddRow.style.display = "none";
+      elFormSlot.innerHTML = "";
+      renderSettings();
+      return;
+    }
+
+    elProg.style.display = "";
+    elCats.style.display = "";
+    elAddRow.style.display = "";
+
     renderCats();
     renderGreeting();
     renderProgress();
     renderWeekBar();
-    renderBg();
     if (state.activeTab === OVERVIEW_ID) renderOverview();
     else renderCategory(state.activeTab);
     renderForm();
@@ -1484,6 +1921,18 @@
     });
   });
 
+  elGear.addEventListener("click", function () {
+    settingsOpen = !settingsOpen;
+    editingId = null;
+    formOpen = false;
+    draft = null;
+    pendingDelete = null;
+    pendingPalette = null;
+    elGear.setAttribute("aria-expanded", String(settingsOpen));
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
   elNewBtn.addEventListener("click", function () {
     if (formOpen) {
       formOpen = false;
@@ -1509,7 +1958,9 @@
 
   var SYNC_API_BASE = "https://checklist-sync-eta.vercel.app";
   var SYNC_APP_KEY = "092c4172262678f0a600ba069d3026d0157e449f";
-  var CATEGORY_VALID = { blueCrab: 1, loom: 1, loomStore: 1, pessoal: 1 };
+  function isKnownCategory(id) {
+    return !!id && !!catOf(id);
+  }
   var syncPushTimer = null;
 
   function taskToSyncPayload(catId, kind, item) {
@@ -1531,9 +1982,17 @@
     return JSON.stringify([payload.category, payload.kind, payload.title, payload.note, payload.days.slice().sort(), payload.date, payload.done]);
   }
 
+  // O Notion tem uma lista fixa de negócios, criada antes das abas virarem
+  // editáveis. Abas novas não cabem lá, então ficam só no aparelho até o
+  // servidor próprio entrar no lugar do Notion. Sem esta guarda, cada tarefa
+  // de uma aba nova tentaria subir a cada salvamento e falharia em silêncio.
+  var NOTION_CATEGORIES = { blueCrab: 1, loom: 1, loomStore: 1, pessoal: 1 };
+
+  function syncsToNotion(catId) { return !!NOTION_CATEGORIES[catId]; }
+
   function collectAllSyncableItems() {
     var out = [];
-    CATEGORIES.forEach(function (cat) {
+    cats().filter(function (c) { return syncsToNotion(c.id); }).forEach(function (cat) {
       state[cat.id].schedule.forEach(function (it) { out.push({ catId: cat.id, kind: "schedule", item: it }); });
       state[cat.id].projects.forEach(function (it) { out.push({ catId: cat.id, kind: "once", item: it }); });
     });
@@ -1586,8 +2045,9 @@
   }
 
   function findLocalSyncItem(id) {
-    for (var i = 0; i < CATEGORIES.length; i++) {
-      var cat = CATEGORIES[i];
+    var list = cats();
+    for (var i = 0; i < list.length; i++) {
+      var cat = list[i];
       var s = state[cat.id].schedule.filter(function (it) { return it.id === id; })[0];
       if (s) return { catId: cat.id, kind: "schedule", item: s };
       var p = state[cat.id].projects.filter(function (it) { return it.id === id; })[0];
@@ -1598,8 +2058,9 @@
 
   function findLocalByNotionPageId(pageId) {
     if (!pageId) return null;
-    for (var i = 0; i < CATEGORIES.length; i++) {
-      var cat = CATEGORIES[i];
+    var list = cats();
+    for (var i = 0; i < list.length; i++) {
+      var cat = list[i];
       var s = state[cat.id].schedule.filter(function (it) { return it.notionPageId === pageId; })[0];
       if (s) return { catId: cat.id, kind: "schedule", item: s };
       var p = state[cat.id].projects.filter(function (it) { return it.notionPageId === pageId; })[0];
@@ -1609,7 +2070,7 @@
   }
 
   function applyRemoteTask(remote) {
-    if (!remote.category || !CATEGORY_VALID[remote.category]) return false;
+    if (!isKnownCategory(remote.category)) return false;
     var appId = remote.appId;
     // Casa por appId primeiro; cai para notionPageId para não readotar como
     // duplicata uma linha que já adotamos mas cujo AppId ainda não voltou.
@@ -1684,7 +2145,7 @@
   var lastPullAt = 0;
 
   function maybePull(force) {
-    if (editingId || formOpen) return;
+    if (editingId || formOpen || settingsOpen) return;
     if (document.hidden) return;
     if (!force && Date.now() - lastPullAt < PULL_MIN_GAP_MS) return;
     syncPull();
@@ -1728,12 +2189,12 @@
   }, { passive: true });
 
   swipeEl.addEventListener("touchend", function (e) {
-    if (tsX === null || tExcluded) { tsX = null; return; }
+    if (tsX === null || tExcluded || settingsOpen) { tsX = null; return; }
     var dx = e.changedTouches[0].clientX - tsX;
     var dy = e.changedTouches[0].clientY - tsY;
     tsX = null;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    var ids = [OVERVIEW_ID].concat(CATEGORIES.map(function (c) { return c.id; }));
+    var ids = [OVERVIEW_ID].concat(allCatIds());
     var idx = ids.indexOf(state.activeTab);
     var nextIdx = dx < 0 ? idx + 1 : idx - 1;
     if (nextIdx < 0 || nextIdx >= ids.length) return;
