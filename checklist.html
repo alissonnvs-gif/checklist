@@ -2356,7 +2356,11 @@
      digitado. E nunca com alteração local pendente: ela tem prioridade,
      senão a busca desfaria o que acabou de ser feito. */
 
-  var PULL_EVERY_MS = 60000;
+  // Fica em 1 minuto enquanto o tempo real não estiver confirmado funcionando:
+  // assim o app nunca fica pior do que já era. Quando o canal avisa que está
+  // no ar, o intervalo afrouxa para 3 minutos (ver ligarTempoReal).
+  var PULL_RAPIDO_MS = 60000;
+  var PULL_FOLGADO_MS = 180000;
   var PULL_MIN_GAP_MS = 15000;
   var lastPullAt = 0;
 
@@ -2394,7 +2398,77 @@
     if (!document.hidden) maybePull(true);
   });
   window.addEventListener("focus", function () { maybePull(true); });
-  window.setInterval(function () { maybePull(false); }, PULL_EVERY_MS);
+
+  // O ritmo da rede de segurança é uma variável, não um intervalo fixo: ele
+  // afrouxa sozinho quando o tempo real prova que está entregando.
+  var pullRitmo = PULL_RAPIDO_MS;
+  var pullUltimoTique = Date.now();
+  window.setInterval(function () {
+    if (Date.now() - pullUltimoTique < pullRitmo) return;
+    pullUltimoTique = Date.now();
+    maybePull(false);
+  }, 10000);
+
+  /* ---------- tempo real ----------
+     O servidor avisa na hora que algo mudou noutro aparelho, em vez de o app
+     ficar perguntando de tempos em tempos. A busca periódica acima continua
+     existindo como rede de segurança: cobre uma conexão que caiu sem avisar e
+     cobre o perfil (nome e tema), que não entra nesta publicação. */
+
+  var canalTempoReal = null;
+  var avisoTimer = null;
+
+  async function ligarTempoReal() {
+    if (!currentUser || canalTempoReal) return;
+
+    // Entrega a credencial ao tempo real ANTES de abrir o canal. Canal privado
+    // sem credencial é recusado, e como o app abre o canal logo depois de
+    // entrar, ele chegava antes de a biblioteca ter repassado o token sozinha.
+    try {
+      var s = await sb.auth.getSession();
+      var token = s && s.data && s.data.session && s.data.session.access_token;
+      if (token && sb.realtime && sb.realtime.setAuth) await sb.realtime.setAuth(token);
+    } catch (e) {}
+    if (!currentUser || canalTempoReal) return;
+
+    var filtro = "user_id=eq." + currentUser.id;
+    // Canal PRIVADO, não público: só o canal privado carrega a identidade de
+    // quem conectou, e sem ela o servidor não aplica o RLS às linhas alteradas
+    // — filtra tudo e não entrega evento nenhum. O nome do canal precisa bater
+    // com a regra de permissão em supabase/02_realtime.sql.
+    canalTempoReal = sb.channel("checklist-" + currentUser.id, { config: { private: true } });
+    ["categories", "tasks", "task_checks"].forEach(function (tabela) {
+      canalTempoReal.on("postgres_changes",
+        { event: "*", schema: "public", table: tabela, filter: filtro },
+        aoReceberAviso);
+    });
+    canalTempoReal.subscribe(function (estado, erro) {
+      // Só afrouxa a busca periódica depois que o canal confirma que está no
+      // ar. Se ele cair ou nunca subir, o app continua no ritmo de 1 minuto —
+      // pior caso é o comportamento que já existia, nunca menos que isso.
+      pullRitmo = estado === "SUBSCRIBED" ? PULL_FOLGADO_MS : PULL_RAPIDO_MS;
+      if (estado !== "SUBSCRIBED") {
+        console.warn("[checklist] tempo real: " + estado + (erro ? " :: " + erro.message : "") +
+                     " — seguindo com busca a cada minuto.");
+      }
+    });
+  }
+
+  function desligarTempoReal() {
+    if (!canalTempoReal) return;
+    try { sb.removeChannel(canalTempoReal); } catch (e) {}
+    canalTempoReal = null;
+    pullRitmo = PULL_RAPIDO_MS;
+  }
+
+  // Uma única alteração costuma chegar como vários avisos (a tarefa e as
+  // marcações dela). Espera a poeira baixar e busca uma vez só. O que este
+  // próprio aparelho acabou de enviar também volta como aviso, mas aí o
+  // maybePull encontra tudo igual e não redesenha nada.
+  function aoReceberAviso() {
+    window.clearTimeout(avisoTimer);
+    avisoTimer = window.setTimeout(function () { maybePull(true); }, 400);
+  }
 
   /* =========================================================
      ENTRAR NA CONTA
@@ -2555,9 +2629,11 @@
     if (seedChanged) showToast("Cronograma atualizado.");
     lastPullAt = Date.now();
     if (localDirty) schedulePush();
+    ligarTempoReal();
   }
 
   async function signOut() {
+    desligarTempoReal();
     try { await sb.auth.signOut(); } catch (e) {}
     // A cópia local sai junto: as tarefas seguem guardadas na conta, mas quem
     // pegar este aparelho depois não deve encontrá-las no navegador.
