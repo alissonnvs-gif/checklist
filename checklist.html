@@ -334,6 +334,33 @@
   .task-when { font-size: 0.63rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
   .task-time { font-size: 0.78rem; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink-2); flex: none; }
 
+  /* ---- em atraso ----
+     Mesma receita de vidro das outras linhas, só que com o vermelho entrando
+     na tinta, na aresta e no brilho de baixo. Não é uma caixa vermelha por
+     cima: é o mesmo vidro, tingido. */
+  :root, :root[data-theme="dia"]   { --late: #D93A2B; }
+  :root[data-theme="noite"]        { --late: #FF8F80; }
+
+  .late-name { color: var(--late); }
+
+  .task-late {
+    background: linear-gradient(150deg,
+      color-mix(in srgb, var(--late) 15%, var(--sheet-a)),
+      color-mix(in srgb, var(--late) 7%, var(--sheet-b)));
+    box-shadow:
+      inset 0 2.5px 2px var(--f-top), inset 0 -4px 10px var(--f-bot),
+      inset 3px 0 8px var(--f-sideL), inset -3px 0 8px var(--f-sideR),
+      inset 0 0 0 1px color-mix(in srgb, var(--late) 40%, var(--f-rim)),
+      0 12px 24px -11px var(--cast),
+      0 12px 26px -14px color-mix(in srgb, var(--late) 65%, transparent);
+  }
+  .task-late .lamp {
+    box-shadow:
+      inset 0 2px 4px var(--well-in), inset 0 -1px 0 var(--f-bot),
+      inset 0 0 0 1px color-mix(in srgb, var(--late) 34%, transparent);
+  }
+  .task-late .task-when { color: var(--late); font-weight: 600; }
+
   .task-acts { display: flex; gap: 5px; flex: none; }
 
   .iconbtn {
@@ -837,6 +864,15 @@
      ========================================================= */
 
   var editingId = null;
+  // Uma tarefa recorrente aparece em várias linhas ao mesmo tempo (vários dias,
+  // e agora várias vezes na lista de atrasadas). Guardar só o id abria UM
+  // formulário POR LINHA — chegou a 33 de uma vez no teste. Esta chave diz qual
+  // ocorrência exata está sendo editada, para o formulário nascer uma vez só.
+  var editingKey = null;
+
+  function occKey(occ) {
+    return occ.kind + ":" + occ.item.id + ":" + (occ.iso || "sem-data");
+  }
   var formOpen = false;
   var draft = null;
   var settingsOpen = false;
@@ -972,6 +1008,87 @@
     return out;
   }
 
+  // Tudo que ficou para trás e continua aberto. Sem limite de tempo, por
+  // escolha dele: nada some enquanto não for marcado.
+  //
+  // Percorre SEMANA a semana, não dia a dia — o histórico é guardado por
+  // semana, e mesmo um ano inteiro de uma tarefa diária dá algumas centenas
+  // de checagens em vez de milhares.
+  function overdueOccurrences(catIds) {
+    var out = [];
+
+    catIds.forEach(function (catId) {
+      var bucket = state[catId];
+      if (!bucket) return;
+
+      bucket.schedule.forEach(function (it) {
+        var nasceu = new Date(it.createdAt || Date.now());
+        nasceu.setHours(0, 0, 0, 0);
+        var nasceuISO = isoOf(nasceu);
+        var semana = mondayOf(nasceu);
+        var voltas = 0;
+        while (semana <= currentMonday && voltas++ < 600) {
+          (it.days || []).forEach(function (wd) {
+            var off = WEEK_ORDER.indexOf(wd);
+            if (off === -1) return;
+            var iso = isoOf(dayOfWeek(semana, off));
+            if (iso >= todayISO) return;    // hoje e o que vem não são atraso
+            if (iso < nasceuISO) return;    // antes de a tarefa existir
+            if (scheduleDone(it, semana, wd)) return;
+            out.push({ catId: catId, kind: "schedule", item: it, monday: semana,
+                       weekday: wd, iso: iso, done: false, time: it.time || "" });
+          });
+          semana = addWeeks(semana, 1);
+        }
+      });
+
+      bucket.projects.forEach(function (t) {
+        if (!t.date || t.done || t.date >= todayISO) return;
+        var inf = dateInfo(t.date);
+        if (!inf) return;
+        out.push({ catId: catId, kind: "once", item: t, monday: inf.monday,
+                   weekday: inf.weekday, iso: t.date, done: false, time: t.time || "" });
+      });
+    });
+
+    // Mais recentes em cima: o que passou ontem pesa mais do que o de três
+    // semanas atrás, e o acúmulo antigo fica no fim em vez de esconder o resto.
+    out.sort(function (a, b) {
+      if (a.iso !== b.iso) return a.iso < b.iso ? 1 : -1;
+      if (a.time && b.time) return a.time < b.time ? -1 : 1;
+      if (a.time) return -1;
+      if (b.time) return 1;
+      return 0;
+    });
+    return out;
+  }
+
+  function lateLabel(iso) {
+    var d = new Date(iso + "T00:00:00");
+    var dias = Math.round((today - d) / 86400000);
+    if (dias <= 1) return "ontem";
+    if (dias < 7) return "há " + dias + " dias";
+    return DAY_SHORT[d.getDay()] + " " + String(d.getDate()).padStart(2, "0") + "/" + MONTH_SHORT[d.getMonth()];
+  }
+
+  // Bloco fixo no topo de toda aba. Só aparece quando existe algo em atraso —
+  // um cabeçalho vazio todo dia viraria paisagem e pararia de ser lido.
+  function lateBlock(catIds, showCat) {
+    var atrasadas = overdueOccurrences(catIds);
+    if (!atrasadas.length) return;
+
+    var head = el("div", "sec-head");
+    head.appendChild(el("span", "sec-name late-name", "Em atraso"));
+    head.appendChild(el("span", "sec-note", atrasadas.length === 1 ? "1 tarefa" : atrasadas.length + " tarefas"));
+    elBody.appendChild(head);
+
+    var list = el("div", "list");
+    atrasadas.forEach(function (o) {
+      list.appendChild(taskRow(o, { showCat: showCat, when: lateLabel(o.iso), late: true }));
+    });
+    elBody.appendChild(list);
+  }
+
   function toggleOccurrence(occ) {
     if (occ.kind === "schedule") setScheduleDone(occ.item, occ.monday, occ.weekday, !occ.done);
     else occ.item.done = !occ.done;
@@ -990,9 +1107,9 @@
   function taskRow(occ, opts) {
     opts = opts || {};
     var item = occ.item;
-    if (editingId === item.id) return editForm(occ);
+    if (editingId === item.id && editingKey === occKey(occ)) return editForm(occ);
 
-    var row = el("div", "gl gl-clear task");
+    var row = el("div", "gl gl-clear task" + (opts.late ? " task-late" : ""));
     row.setAttribute("style", catVars(occ.catId));
     row.setAttribute("data-on", String(occ.done));
 
@@ -1032,6 +1149,7 @@
     edit.appendChild(svgPath(ICON_EDIT));
     edit.addEventListener("click", function () {
       editingId = item.id;
+      editingKey = occKey(occ);
       formOpen = false;
       draft = makeDraft(occ);
       render();
@@ -1317,6 +1435,7 @@
 
   function renderOverview() {
     elBody.innerHTML = "";
+    lateBlock(allCatIds(), true);
     var any = false;
 
     for (var off = 0; off < OVERVIEW_DAYS; off++) {
@@ -1372,6 +1491,7 @@
 
   function renderCategory(catId) {
     elBody.innerHTML = "";
+    lateBlock([catId], false);
 
     var head = el("div", "sec-head");
     head.appendChild(el("span", "sec-name", "Cronograma"));
@@ -1407,6 +1527,11 @@
     WEEK_ORDER.forEach(function (wd, idx) {
       var d = dayOfWeek(state.viewingWeek, idx);
       var occs = occurrencesOn(d, [catId]);
+      // O que passou e continua aberto já subiu para o bloco "Em atraso" —
+      // repetir aqui mostrava a mesma tarefa duas vezes na mesma tela (e abria
+      // dois formulários ao editar). O que passou e foi concluído fica, senão
+      // o cronograma perderia o registro do que você cumpriu.
+      occs = occs.filter(function (o) { return o.done || o.iso >= todayISO; });
       if (!occs.length) return;
       any = true;
 
