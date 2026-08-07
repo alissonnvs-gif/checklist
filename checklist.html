@@ -2086,6 +2086,17 @@
       return bloco;
     }
 
+    // Depois de negada uma vez, a permissão fica bloqueada e o navegador nem
+    // volta a perguntar — um botão aqui não faria nada. Explica o caminho
+    // manual em vez de fingir que ainda dá.
+    if (Notification.permission === "denied") {
+      bloco.appendChild(el("p", "set-help",
+        "Os avisos estão bloqueados para este app nas configurações do navegador, " +
+        "e daqui não dá para desbloquear. Toque no cadeado ao lado do endereço, " +
+        "procure Notificações e mude para Permitir — depois volte aqui."));
+      return bloco;
+    }
+
     if (!pushEstado.ativo) {
       bloco.appendChild(el("p", "set-help",
         "Receba o resumo do dia e um toque antes das tarefas com horário."));
