@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Checklist — Blue Crab / LOOM / LOOM Store / Pessoal</title>
+<title>Checklist — sua rotina, do jeito que você organiza</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#E5E2DE">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -647,11 +647,14 @@
 
   // Ponto de partida para quem abre o app pela primeira vez. A partir daí as
   // abas são dado editável em state.categories, não código.
+  // Ponto de partida de quem abre a primeira vez. Só uma aba: a página
+  // "Geral" já existe sozinha em toda conta (é a visão que junta tudo), então
+  // uma categoria com esse nome deixaria duas abas "Geral" na barra.
+  // Antes daqui ficavam Blue Crab, LOOM, LOOM Store e Pessoal — os negócios
+  // do Alisson, escritos no código de quando o app era só dele. Ninguém mais
+  // deveria abrir a conta e encontrar o nome das empresas de outra pessoa.
   var DEFAULT_CATEGORIES = [
-    { id: "blueCrab",  label: "Blue Crab",  palette: "violeta" },
-    { id: "loom",      label: "LOOM",       palette: "verde" },
-    { id: "loomStore", label: "LOOM Store", palette: "coral" },
-    { id: "pessoal",   label: "Pessoal",    palette: "azul" }
+    { id: "pessoal", label: "Pessoal", palette: "azul" }
   ];
 
   function cats() { return state.categories; }
