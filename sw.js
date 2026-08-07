@@ -1,6 +1,6 @@
 // Bump CACHE_VERSION whenever checklist.html (or any cached asset) changes,
 // so installed/offline copies pick up the update instead of serving stale files.
-var CACHE_VERSION = "v6";
+var CACHE_VERSION = "v7";
 var CACHE_NAME = "checklist-" + CACHE_VERSION;
 var ASSETS = [
   "./checklist.html",
@@ -50,6 +50,51 @@ self.addEventListener("fetch", function (event) {
       return caches.match(event.request).then(function (cached) {
         return cached || caches.match("./checklist.html");
       });
+    })
+  );
+});
+
+/* ============================================================
+   NOTIFICAÇÕES
+   Esta parte roda com o app fechado — é ela que recebe o aviso do
+   servidor e o mostra na tela do celular.
+   ============================================================ */
+
+self.addEventListener("push", function (event) {
+  var dados = {};
+  try { dados = event.data ? event.data.json() : {}; } catch (e) { dados = {}; }
+
+  // O navegador exige que todo aviso recebido vire uma notificação visível.
+  // Se algo vier vazio ou quebrado, mostra algo genérico em vez de silenciar —
+  // silenciar repetidamente faz o navegador cortar o direito de notificar.
+  var titulo = dados.titulo || "Checklist";
+  var opcoes = {
+    body: dados.corpo || "",
+    icon: "./icon-192.png",
+    badge: "./icon-192.png",
+    lang: "pt-BR",
+    // tag igual substitui o aviso anterior em vez de empilhar: dois resumos
+    // do mesmo dia viram um só na barra de notificações.
+    tag: dados.tag || "checklist",
+    renotify: true,
+    data: { url: dados.url || "./checklist.html" }
+  };
+  event.waitUntil(self.registration.showNotification(titulo, opcoes));
+});
+
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+  var destino = (event.notification.data && event.notification.data.url) || "./checklist.html";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (abertas) {
+      // Se o app já está aberto em algum lugar, traz para a frente em vez de
+      // abrir uma segunda cópia.
+      for (var i = 0; i < abertas.length; i++) {
+        if (abertas[i].url.indexOf("checklist") !== -1 && "focus" in abertas[i]) {
+          return abertas[i].focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(destino);
     })
   );
 });

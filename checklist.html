@@ -372,6 +372,17 @@
   .latebtn[aria-expanded="true"] .latebtn-chev { transform: rotate(180deg); }
   .late-list { margin-bottom: 24px; }
 
+  /* ---- preferências de aviso ---- */
+  .notif-prefs { margin-top: 14px; display: flex; flex-direction: column; gap: 2px; }
+  .notif-linha {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 9px 2px; cursor: pointer;
+  }
+  .notif-linha + .notif-linha { border-top: 1px solid color-mix(in srgb, var(--ink) 9%, transparent); }
+  .notif-rotulo { font-size: 0.82rem; color: var(--ink); }
+  .notif-hora { width: auto; flex: none; padding: 7px 11px; cursor: pointer; }
+  .notif-chk { width: 20px; height: 20px; flex: none; accent-color: var(--ps-2); cursor: pointer; }
+
   .task-late {
     background: linear-gradient(150deg,
       color-mix(in srgb, var(--late) 15%, var(--sheet-a)),
@@ -607,6 +618,11 @@
   var SUPA_URL = "https://vccmpzzebhwmbarqnfod.supabase.co";
   var SUPA_KEY = "sb_publishable_YVDq4Yvyn4dHoJ1mbVSYPw_oXcARWX1";
 
+  // Metade pública do par de chaves de notificação. Aparecer aqui é o
+  // funcionamento normal: ela só serve para o navegador conferir que o aviso
+  // veio mesmo deste app. A metade privada vive como segredo no servidor.
+  var VAPID_PUBLICA = "BKVu_U7VAoHVPnkS0dwSwcDCgFxgZ_Jp795Kscb-Dz_iRIdylRAUhtJubSJynVvOvbyHVoCB4H1dlrCf1MVBJwg";
+
   // Uma chave de armazenamento por conta, para que duas contas no mesmo
   // navegador nunca misturem dados. Definida no login.
   var STORAGE_KEY = null;
@@ -801,6 +817,17 @@
     delete parsed.syncKnownIds;
     if (!parsed.overviewSeen) { parsed.activeTab = OVERVIEW_ID; parsed.overviewSeen = true; }
     if (typeof parsed.userName !== "string") parsed.userName = "";
+
+    // Preferências de aviso. Viajam junto do perfil, então valem em qualquer
+    // aparelho: você escolhe o horário no computador e o celular obedece.
+    if (!parsed.notif || typeof parsed.notif !== "object") parsed.notif = {};
+    if (typeof parsed.notif.resumo !== "boolean") parsed.notif.resumo = true;
+    if (!/^\d{2}:\d{2}$/.test(parsed.notif.hora)) parsed.notif.hora = "07:00";
+    if (typeof parsed.notif.antes60 !== "boolean") parsed.notif.antes60 = true;
+    if (typeof parsed.notif.antes30 !== "boolean") parsed.notif.antes30 = true;
+    if (typeof parsed.notif.tz !== "string" || !parsed.notif.tz) {
+      parsed.notif.tz = fusoDoAparelho();
+    }
     if (parsed.theme !== "dia" && parsed.theme !== "noite") parsed.theme = null;
     // A aba ativa pode apontar para uma aba que foi excluída.
     if (parsed.activeTab !== OVERVIEW_ID &&
@@ -838,6 +865,14 @@
     });
     parsed.seedVersion = SEED_VERSION;
     return true;
+  }
+
+  // O fuso que o próprio aparelho declara. É o que o servidor usa para saber
+  // que "07:00" é sete da manhã em Brasília, e não em Londres.
+  function fusoDoAparelho() {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo";
+    } catch (e) { return "America/Sao_Paulo"; }
   }
 
   function readStored(key) {
@@ -1882,6 +1917,196 @@
   var pendingPalette = null;  // id da aba com o seletor de cor aberto
   var pendingSignOut = false; // confirmação em dois toques para sair da conta
 
+  /* ---------- notificações ----------
+     O estado fica em cache porque descobrir se este aparelho já está inscrito
+     é uma pergunta assíncrona, e a tela de configurações é desenhada de uma
+     vez. Ao terminar a consulta, redesenha. */
+
+  var pushEstado = { lido: false, ativo: false };
+
+  function pushSuportado() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  }
+
+  function ehIOS() {
+    return /iP(hone|ad|od)/.test(navigator.userAgent) ||
+           (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+
+  function ehCelular() {
+    return /Android|iP(hone|ad|od)/i.test(navigator.userAgent) || ehIOS();
+  }
+
+  // No iPhone, aviso só chega se o app estiver instalado na Tela de Início.
+  function instaladoNaTela() {
+    return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+           navigator.standalone === true;
+  }
+
+  function b64ParaBytes(b64) {
+    var resto = (4 - (b64.length % 4)) % 4;
+    var normal = (b64 + "====".slice(0, resto)).replace(/-/g, "+").replace(/_/g, "/");
+    var bruto = atob(normal);
+    var saida = new Uint8Array(bruto.length);
+    for (var i = 0; i < bruto.length; i++) saida[i] = bruto.charCodeAt(i);
+    return saida;
+  }
+
+  async function lerEstadoPush() {
+    pushEstado.lido = true;
+    pushEstado.ativo = false;
+    try {
+      if (pushSuportado()) {
+        var reg = await navigator.serviceWorker.ready;
+        pushEstado.ativo = !!(await reg.pushManager.getSubscription());
+      }
+    } catch (e) {}
+    if (settingsOpen) renderSettings();
+  }
+
+  async function ativarNotificacoes(botao) {
+    botao.disabled = true;
+    botao.textContent = "Ativando…";
+    try {
+      if ((await Notification.requestPermission()) !== "granted") {
+        showToast("O aparelho negou a permissão.");
+        renderSettings();
+        return;
+      }
+      var reg = await navigator.serviceWorker.ready;
+      var inscricao = await reg.pushManager.getSubscription();
+      if (!inscricao) {
+        inscricao = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: b64ParaBytes(VAPID_PUBLICA)
+        });
+      }
+      var j = inscricao.toJSON();
+      var r = await sb.from("push_subscriptions").upsert({
+        user_id: currentUser.id,
+        endpoint: j.endpoint,
+        p256dh: j.keys.p256dh,
+        auth: j.keys.auth,
+        device_kind: ehCelular() ? "celular" : "computador",
+        user_agent: (navigator.userAgent || "").slice(0, 300),
+        last_seen: new Date().toISOString()
+      });
+      if (r.error) throw r.error;
+
+      // O fuso passa a ser o do aparelho onde você ativou — é nele que os
+      // horários fazem sentido.
+      state.notif.tz = fusoDoAparelho();
+      save();
+
+      pushEstado.ativo = true;
+      showToast("Avisos ativados neste aparelho.");
+    } catch (e) {
+      showToast("Não deu para ativar. Tente de novo.");
+    }
+    renderSettings();
+  }
+
+  async function desativarNotificacoes() {
+    try {
+      var reg = await navigator.serviceWorker.ready;
+      var inscricao = await reg.pushManager.getSubscription();
+      if (inscricao) {
+        var endereco = inscricao.endpoint;
+        await inscricao.unsubscribe();
+        await sb.from("push_subscriptions").delete().eq("endpoint", endereco);
+      }
+      pushEstado.ativo = false;
+      showToast("Avisos desativados neste aparelho.");
+    } catch (e) {
+      showToast("Não deu para desativar.");
+    }
+    renderSettings();
+  }
+
+  function prefsNotif() {
+    var caixa = el("div", "notif-prefs");
+
+    var linha = el("label", "notif-linha");
+    linha.appendChild(el("span", "notif-rotulo", "Resumo do dia às"));
+    var hora = el("input", "inp notif-hora");
+    hora.type = "time";
+    hora.value = state.notif.hora;
+    hora.addEventListener("change", function () {
+      if (/^\d{2}:\d{2}$/.test(hora.value)) { state.notif.hora = hora.value; save(); }
+    });
+    linha.appendChild(hora);
+    caixa.appendChild(linha);
+
+    caixa.appendChild(chaveNotif("Mandar o resumo do dia", "resumo"));
+    caixa.appendChild(chaveNotif("Avisar 1 hora antes", "antes60"));
+    caixa.appendChild(chaveNotif("Avisar 30 minutos antes", "antes30"));
+    return caixa;
+  }
+
+  function chaveNotif(rotulo, campo) {
+    var linha = el("label", "notif-linha");
+    linha.appendChild(el("span", "notif-rotulo", rotulo));
+    var chk = el("input", "notif-chk");
+    chk.type = "checkbox";
+    chk.checked = state.notif[campo] !== false;
+    chk.addEventListener("change", function () {
+      state.notif[campo] = chk.checked;
+      save();
+    });
+    linha.appendChild(chk);
+    return linha;
+  }
+
+  var AVISO_IPHONE = "No iPhone os avisos só funcionam com o app instalado na " +
+    "Tela de Início. Toque em Compartilhar, escolha \"Adicionar à Tela de Início\", " +
+    "abra o app por lá e volte aqui.";
+
+  function blocoNotificacoes() {
+    var bloco = el("section", "gl gl-clear set-block");
+    bloco.appendChild(el("h2", "set-title", "Notificações"));
+
+    if (ehIOS() && !instaladoNaTela()) {
+      bloco.appendChild(el("p", "set-help", AVISO_IPHONE));
+      return bloco;
+    }
+    if (!ehCelular()) {
+      bloco.appendChild(el("p", "set-help",
+        "Os avisos vão só para o celular, como você escolheu. Ative por lá — " +
+        "os ajustes abaixo valem para ele."));
+      bloco.appendChild(prefsNotif());
+      return bloco;
+    }
+    if (!pushSuportado()) {
+      bloco.appendChild(el("p", "set-help",
+        "Este celular não sabe receber avisos. Costuma ser versão antiga do sistema."));
+      return bloco;
+    }
+    if (!pushEstado.lido) {
+      bloco.appendChild(el("p", "set-help", "Verificando…"));
+      return bloco;
+    }
+
+    if (!pushEstado.ativo) {
+      bloco.appendChild(el("p", "set-help",
+        "Receba o resumo do dia e um toque antes das tarefas com horário."));
+      var liga = el("button", "minibtn", "Ativar notificações");
+      liga.type = "button";
+      liga.style.marginTop = "12px";
+      liga.addEventListener("click", function () { ativarNotificacoes(liga); });
+      bloco.appendChild(liga);
+      return bloco;
+    }
+
+    bloco.appendChild(el("p", "set-help", "Ativados neste aparelho."));
+    bloco.appendChild(prefsNotif());
+    var desliga = el("button", "minibtn minibtn-ghost", "Desativar neste aparelho");
+    desliga.type = "button";
+    desliga.style.marginTop = "12px";
+    desliga.addEventListener("click", desativarNotificacoes);
+    bloco.appendChild(desliga);
+    return bloco;
+  }
+
   function renderSettings() {
     elBody.innerHTML = "";
     var wrap = el("div", "settings");
@@ -1934,6 +2159,8 @@
     });
     b2.appendChild(add);
     wrap.appendChild(b2);
+
+    wrap.appendChild(blocoNotificacoes());
 
     /* --- conta --- */
     var b3 = el("section", "gl gl-clear set-block");
@@ -2266,7 +2493,16 @@
 
   function desiredRows() {
     var rows = { profile: null, cats: {}, tasks: {}, checks: {} };
-    rows.profile = { display_name: state.userName || "", theme: state.theme || null };
+    var n = state.notif || {};
+    rows.profile = {
+      display_name: state.userName || "",
+      theme: state.theme || null,
+      notif_resumo: n.resumo !== false,
+      notif_resumo_hora: n.hora || "07:00",
+      notif_60: n.antes60 !== false,
+      notif_30: n.antes30 !== false,
+      timezone: n.tz || fusoDoAparelho()
+    };
 
     cats().forEach(function (c, i) {
       rows.cats[c.id] = { id: c.id, label: c.label, palette: c.palette, sort_order: i };
@@ -2386,9 +2622,7 @@
     // 1. perfil (nome e tema)
     var pfp = fpOf(want.profile);
     if (srv.profile !== pfp) {
-      fail(await sb.from("profiles").upsert({
-        id: uidv, display_name: want.profile.display_name, theme: want.profile.theme
-      }));
+      fail(await sb.from("profiles").upsert(Object.assign({ id: uidv }, want.profile)));
       srv.profile = pfp;
     }
 
@@ -2452,7 +2686,9 @@
 
   async function pullOnce() {
     var res = await Promise.all([
-      sb.from("profiles").select("display_name,theme").eq("id", currentUser.id).maybeSingle(),
+      sb.from("profiles")
+        .select("display_name,theme,notif_resumo,notif_resumo_hora,notif_60,notif_30,timezone")
+        .eq("id", currentUser.id).maybeSingle(),
       sb.from("categories").select("id,label,palette,sort_order").order("sort_order", { ascending: true }),
       sb.from("tasks").select("id,category_id,kind,title,note,days,due_date,time_of_day,done,created_at"),
       sb.from("task_checks").select("task_id,week_monday,weekday")
@@ -2472,6 +2708,13 @@
       categories: d.cats.map(function (c) { return { id: c.id, label: c.label, palette: c.palette }; }),
       userName: (d.profile && d.profile.display_name) || "",
       theme: (d.profile && d.profile.theme) || null,
+      notif: d.profile ? {
+        resumo: d.profile.notif_resumo !== false,
+        hora: d.profile.notif_resumo_hora || "07:00",
+        antes60: d.profile.notif_60 !== false,
+        antes30: d.profile.notif_30 !== false,
+        tz: d.profile.timezone || fusoDoAparelho()
+      } : null,
       viewingWeek: (state && state.viewingWeek) || mondayOf(new Date()),
       activeTab: (state && state.activeTab) || OVERVIEW_ID,
       overviewSeen: true,
@@ -2794,6 +3037,7 @@
     lastPullAt = Date.now();
     if (localDirty) schedulePush();
     ligarTempoReal();
+    lerEstadoPush();
   }
 
   async function signOut() {
