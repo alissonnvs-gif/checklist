@@ -31,7 +31,7 @@ Decisões já tomadas:
 **Você faz:** colar no SQL Editor e rodar. Uma vez só.
 Arquivo: `supabase/03_notificacoes.sql`
 
-- [ ] **VOCÊ ESTÁ AQUI** — SQL escrito, esperando você rodar
+- [x] Concluído
 
 ---
 
@@ -48,7 +48,7 @@ com o nome `VAPID_PRIVATE_KEY`. Ela é sua e fica só aí.
 
 - [x] Chaves geradas em `D:\PROJETOS\CLAUDE\checklist-chaves-vapid.txt`
       (fora do repositório, de propósito)
-- [ ] Você colar a privada no painel
+- [x] Concluído
 
 ---
 
@@ -66,7 +66,7 @@ resumo, o aviso de 1 hora e o de 30 minutos.
 
 **Você faz:** nada. Depois testa.
 
-- [x] Escrito — falta testar (depende do passo 1 estar rodado)
+- [x] Concluído e testado
 
 ---
 
@@ -78,7 +78,7 @@ quando você tocar na notificação.
 
 **Você faz:** nada.
 
-- [x] Escrito (`sw.js`, cache subido para v7)
+- [x] Concluído
 
 ---
 
@@ -95,7 +95,7 @@ para não repetir.
 publicar. Arquivo: `supabase/functions/avisos/index.ts`
 
 - [x] Escrita
-- [ ] Você publicar no painel
+- [x] Concluído — publicada e protegida por senha própria
 
 ---
 
@@ -106,11 +106,12 @@ minutos. É isso que faz o aviso chegar mesmo com o celular guardado no bolso
 e o app fechado.
 
 **Você faz:** colar e rodar. Arquivo: `supabase/04_agendamento.sql`.
-Ele tem um lugar para colar a chave `service_role` — preencha na hora,
-não salve preenchido, e não mande essa chave para ninguém.
+Não precisa da chave `service_role`: a verificação do painel exige chave no
+formato antigo, que este projeto não usa, então a função confere uma senha
+própria (`CRON_SECRET`) e o agendamento só manda essa senha no cabeçalho.
 
 - [x] Escrito
-- [ ] Você rodar
+- [x] Concluído
 
 ---
 
@@ -120,7 +121,7 @@ não salve preenchido, e não mande essa chave para ninguém.
 gente confirma que chegou. Depois um teste com horário real, para ver o
 "1 hora antes" chegando sozinho.
 
-- [ ] Concluído
+- [x] **CONCLUÍDO — o aviso de teste chegou no Samsung em 2026-08-07**
 
 ---
 
