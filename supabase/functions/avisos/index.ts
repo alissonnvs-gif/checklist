@@ -21,6 +21,12 @@ const VAPID_PUBLICA = "BKVu_U7VAoHVPnkS0dwSwcDCgFxgZ_Jp795Kscb-Dz_iRIdylRAUhtJub
 const VAPID_PRIVADA = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
 const ASSUNTO = "mailto:alisson.nvs@gmail.com";
 
+// Senha combinada com o agendamento. A verificação de token do painel fica
+// desligada (ela exige chave no formato antigo, que este projeto não usa),
+// então a porta é esta. Sem ela, qualquer um na internet conseguiria pedir
+// um disparo de teste para o celular de qualquer usuário.
+const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+
 webpush.setVapidDetails(ASSUNTO, VAPID_PUBLICA, VAPID_PRIVADA);
 
 const sb = createClient(
@@ -97,6 +103,15 @@ async function enviar(insc: any, corpo: unknown) {
 /* ---------- rotina ---------- */
 
 Deno.serve(async (req) => {
+  // Porta de entrada: só quem sabe a senha combinada passa. Recusa também
+  // quando o segredo não está configurado — melhor não funcionar do que
+  // ficar aberta sem ninguém perceber.
+  if (!CRON_SECRET || req.headers.get("x-checklist-cron") !== CRON_SECRET) {
+    return new Response(JSON.stringify({ erro: "nao autorizado" }), {
+      status: 401, headers: { "Content-Type": "application/json" },
+    });
+  }
+
   if (!VAPID_PRIVADA) {
     return new Response(
       JSON.stringify({ erro: "VAPID_PRIVATE_KEY nao configurada nos segredos" }),

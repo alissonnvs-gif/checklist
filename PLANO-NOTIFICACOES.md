@@ -92,9 +92,10 @@ o horário de Brasília, decide o que está na hora, envia, e anota o que enviou
 para não repetir.
 
 **Você faz:** criar a função no painel (Edge Functions), colar o código e
-publicar.
+publicar. Arquivo: `supabase/functions/avisos/index.ts`
 
-- [ ] Concluído
+- [x] Escrita
+- [ ] Você publicar no painel
 
 ---
 
@@ -104,9 +105,12 @@ publicar.
 minutos. É isso que faz o aviso chegar mesmo com o celular guardado no bolso
 e o app fechado.
 
-**Você faz:** colar e rodar.
+**Você faz:** colar e rodar. Arquivo: `supabase/04_agendamento.sql`.
+Ele tem um lugar para colar a chave `service_role` — preencha na hora,
+não salve preenchido, e não mande essa chave para ninguém.
 
-- [ ] Concluído
+- [x] Escrito
+- [ ] Você rodar
 
 ---
 
