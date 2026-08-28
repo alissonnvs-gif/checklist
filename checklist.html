@@ -545,6 +545,23 @@
     flex: none; max-width: 33%; text-align: right; line-height: 1.25;
   }
 
+  /* Seletor de agenda: só aparece pra quem tem agenda de outra pessoa. */
+  .agendasel { display: flex; gap: 3px; padding: 4px; border-radius: 999px; margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; }
+  .agendasel::-webkit-scrollbar { display: none; }
+  .agendasel .fc { white-space: nowrap; flex: none; }
+
+  /* O código do convite. Grande e espaçado porque ele vai ser lido em voz
+     alta ou digitado por outra pessoa — os dois pioram com dígito apertado. */
+  .codigao {
+    font-size: 1.9rem; font-weight: 700; letter-spacing: 0.22em;
+    font-variant-numeric: tabular-nums; text-align: center;
+    padding: 16px 8px 14px; margin-top: 12px; border-radius: 16px;
+    color: var(--ink);
+    background: linear-gradient(180deg, var(--well-a), var(--well-b));
+    box-shadow: inset 0 1.5px 3px var(--well-in);
+  }
+  .codigo-prazo { font-size: 0.74rem; color: var(--ink-2); text-align: center; margin: 8px 0 0; line-height: 1.4; }
+
   .fields-row { display: flex; gap: 9px; }
   .fields-row .field-qty { flex: 0 0 104px; }
   .fields-row .field-hora { flex: 0 0 122px; }
@@ -906,6 +923,7 @@
     // ---- agenda ----
     // Sem data válida o atendimento não teria dia nenhum onde aparecer; some
     // do estado em vez de virar uma linha invisível que nunca mais some.
+    if (!Array.isArray(parsed.agendasComigo)) parsed.agendasComigo = [];
     if (!Array.isArray(parsed.agenda)) parsed.agenda = [];
     parsed.agenda = parsed.agenda.filter(function (a) {
       return a && typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date);
@@ -2024,6 +2042,12 @@
 
     if (state.faceta === "agenda") {
       elNewLabel.textContent = "Novo atendimento";
+      // Na tela de compartilhar não existe "marcar atendimento", e numa agenda
+      // que você só pode olhar o botão não deve nem existir.
+      if (agendaTela !== "dia" || !agendaAtualEditavel()) {
+        elAddRow.style.display = "none";
+        return;
+      }
       elAddRow.style.display = "";
       if (!formOpen) return;
       elFormSlot.appendChild(formAtendimento(null));
@@ -2467,18 +2491,41 @@
   var agendaSemana = currentMonday;  // semana da faixa
   var atendEditando = null;          // id do atendimento em edição
   var agendaOk = true;               // false quando o banco ainda não tem as tabelas
+  var agendaDono = null;             // null = a minha; senão o id do dono
+  var agendaTela = "dia";            // "dia" ou "compartilhar"
 
   function agenda() {
     if (!Array.isArray(state.agenda)) state.agenda = [];
     return state.agenda;
   }
 
-  function podeEditarAtend(a) { return !a || a.canEdit !== false; }
+  function meuId() { return currentUser ? currentUser.id : null; }
+  function donoDo(a) { return a.ownerId || meuId(); }
+  function donoAtual() { return agendaDono || meuId(); }
+
+  function agendasComigo() {
+    return Array.isArray(state.agendasComigo) ? state.agendasComigo : [];
+  }
+
+  // Na minha agenda mando eu. Na agenda de outra pessoa, quem manda é o
+  // convite: só quem recebeu "editar" pode mexer.
+  function agendaAtualEditavel() {
+    if (!agendaDono) return true;
+    var c = agendasComigo().filter(function (x) { return x.ownerId === agendaDono; })[0];
+    return !!(c && c.canEdit);
+  }
+
+  function podeEditarAtend(a) {
+    if (!a) return agendaAtualEditavel();
+    return a.canEdit !== false && agendaAtualEditavel();
+  }
 
   // Quem não tem hora vai para o fim: um encaixe sem hora não pode empurrar
   // para baixo quem tem hora marcada.
   function atendimentosDe(iso) {
-    return agenda().filter(function (a) { return a.date === iso; })
+    var dono = donoAtual();
+    return agenda()
+      .filter(function (a) { return a.date === iso && donoDo(a) === dono; })
       .sort(function (x, y) {
         var hx = x.time || "99:99", hy = y.time || "99:99";
         if (hx !== hy) return hx < hy ? -1 : 1;
@@ -2510,9 +2557,17 @@
 
   function renderAgenda() {
     elWeekSlot.innerHTML = "";
+    elBody.innerHTML = "";
+
+    if (agendaTela === "compartilhar") {
+      elBody.appendChild(telaCompartilhar());
+      return;
+    }
+
+    var sel = seletorDeAgenda();
+    if (sel) elWeekSlot.appendChild(sel);
     elWeekSlot.appendChild(agendaWeekBar());
 
-    elBody.innerHTML = "";
     var wrap = el("div", "faceta-agenda");
     var doDia = atendimentosDe(agendaDia);
 
@@ -2531,7 +2586,49 @@
       wrap.appendChild(lista);
     }
 
+    var abrir = el("button", "minibtn minibtn-ghost", "Compartilhar agenda");
+    abrir.type = "button";
+    abrir.style.marginTop = "18px";
+    abrir.addEventListener("click", function () {
+      agendaTela = "compartilhar";
+      atendEditando = null;
+      formOpen = false;
+      conviteCodigo = null;
+      convidados = null;
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      carregarConvidados();
+    });
+    wrap.appendChild(abrir);
+
     elBody.appendChild(wrap);
+  }
+
+  function seletorDeAgenda() {
+    var outras = agendasComigo();
+    if (!outras.length) return null;   // sozinho não precisa escolher nada
+
+    var wrap = el("div", "gl gl-clear agendasel faceta-agenda");
+    wrap.setAttribute("role", "group");
+    wrap.setAttribute("aria-label", "Qual agenda");
+
+    function botao(id, rotulo) {
+      var b = el("button", "fc", rotulo);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(agendaDono === id));
+      b.addEventListener("click", function () {
+        if (agendaDono === id) return;
+        agendaDono = id;
+        atendEditando = null;
+        formOpen = false;
+        render();
+      });
+      return b;
+    }
+
+    wrap.appendChild(botao(null, "Minha agenda"));
+    outras.forEach(function (c) { wrap.appendChild(botao(c.ownerId, c.nome)); });
+    return wrap;
   }
 
   function agendaWeekBar() {
@@ -2735,7 +2832,10 @@
       if (novo) {
         agenda().push({
           id: "a" + uid(),
-          ownerId: currentUser ? currentUser.id : null,
+          // Marcado NA agenda que está aberta: se for a do outro, o dono da
+          // linha é ele. É isso que faz a secretária marcar paciente na
+          // agenda do Alisson, e não numa agenda dela.
+          ownerId: donoAtual(),
           canEdit: true,
           date: agendaDia, time: hora, name: nome, kind: tipo, note: obs,
           done: false, createdAt: Date.now()
@@ -2779,6 +2879,189 @@
 
     box.appendChild(form);
     return box;
+  }
+
+  /* ---- compartilhar a agenda ----
+     O convite é um número de 6 dígitos de uso único, decisão dele. Quem
+     confere o número é uma função no banco, não o app: o convidado nunca
+     pode ter o direito de ler os convites dos outros. ---- */
+
+  var conviteCodigo = null;          // último número gerado, para mostrar
+  var convitePermissao = "editar";   // "ver" ou "editar"
+  var convidados = null;             // null = ainda consultando
+
+  function textoErroConvite(erro) {
+    // "invalido" cobre errado, já usado e vencido de propósito — separar os
+    // três contaria a quem está chutando que o número existe.
+    if (erro === "invalido") return "Número inválido, já usado ou vencido. Peça outro.";
+    if (erro === "proprio") return "Esse número é seu. Ele serve pra outra pessoa entrar.";
+    if (erro === "nao logado") return "Entre na sua conta primeiro.";
+    return "Não deu certo. Tente de novo.";
+  }
+
+  async function carregarConvidados() {
+    if (!currentUser) { convidados = []; return; }
+    try {
+      var r = await sb.rpc("convidados_da_agenda");
+      convidados = r.error ? [] : (r.data || []);
+    } catch (e) { convidados = []; }
+    if (state.faceta === "agenda" && agendaTela === "compartilhar") render();
+  }
+
+  async function gerarConvite(botao) {
+    if (!currentUser) return;
+    botao.disabled = true;
+    try {
+      var r = await sb.rpc("criar_convite_agenda", { pode_editar: convitePermissao === "editar" });
+      if (r.error) throw r.error;
+      if (!r.data || r.data.ok !== true) showToast(textoErroConvite(r.data && r.data.erro));
+      else conviteCodigo = r.data;
+    } catch (e) {
+      showToast("Não deu para gerar agora. Confira a internet.");
+    }
+    botao.disabled = false;
+    render();
+  }
+
+  async function usarConvite(valor, botao) {
+    var codigo = (valor || "").replace(/\D/g, "");
+    if (codigo.length !== 6) { showToast("O número tem 6 dígitos."); return; }
+    botao.disabled = true;
+    try {
+      var r = await sb.rpc("usar_convite_agenda", { codigo: codigo });
+      if (r.error) throw r.error;
+      if (!r.data || r.data.ok !== true) {
+        showToast(textoErroConvite(r.data && r.data.erro));
+      } else {
+        showToast("Pronto. A agenda apareceu no seletor lá em cima.");
+        agendaTela = "dia";
+        // A agenda nova só existe aqui depois de buscar: o convite mudou o
+        // banco, não a cópia local.
+        maybePull(true);
+      }
+    } catch (e) {
+      showToast("Não deu para entrar agora. Confira a internet.");
+    }
+    botao.disabled = false;
+    render();
+  }
+
+  async function tirarAcesso(c) {
+    try {
+      var r = await sb.from("agenda_shares").delete()
+        .eq("owner_id", currentUser.id).eq("user_id", c.user_id);
+      if (r.error) throw r.error;
+      showToast("Acesso removido.");
+    } catch (e) {
+      showToast("Não deu para remover agora.");
+    }
+    carregarConvidados();
+  }
+
+  function telaCompartilhar() {
+    var wrap = el("div", "settings faceta-agenda");
+
+    var head = el("div", "listhead");
+    var voltar = el("button", "wbtn");
+    voltar.type = "button";
+    voltar.setAttribute("aria-label", "Voltar para a agenda");
+    voltar.appendChild(svgPath(ICON_PREV));
+    voltar.addEventListener("click", function () { agendaTela = "dia"; render(); });
+    head.appendChild(voltar);
+    head.appendChild(el("span", "listcard-name", "Compartilhar agenda"));
+    wrap.appendChild(head);
+
+    /* --- convidar --- */
+    var b1 = el("section", "gl gl-clear set-block");
+    // Diz "sua agenda" no título de propósito: dá para chegar aqui olhando a
+    // agenda de outra pessoa, e o número gerado é sempre da SUA.
+    b1.appendChild(el("h2", "set-title", "Convidar alguém pra sua agenda"));
+    b1.appendChild(el("p", "set-help",
+      "Gere um número de 6 dígitos e passe pra pessoa. Ela digita esse número no " +
+      "app dela, aqui mesmo, em Agenda → Compartilhar. O número serve uma vez só e " +
+      "vale por 30 minutos."));
+
+    var picks = el("div", "picks");
+    [["ver", "Só olhar"], ["editar", "Pode editar"]].forEach(function (p) {
+      var b = el("button", "pick", p[1]);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(convitePermissao === p[0]));
+      b.addEventListener("click", function () {
+        if (convitePermissao === p[0]) return;
+        convitePermissao = p[0];
+        // O número já gerado carrega a permissão antiga: mostrar ele aqui
+        // depois de trocar a escolha faria você passar o convite errado.
+        conviteCodigo = null;
+        render();
+      });
+      picks.appendChild(b);
+    });
+    b1.appendChild(picks);
+
+    var gerar = el("button", "minibtn", conviteCodigo ? "Gerar outro número" : "Gerar número");
+    gerar.type = "button";
+    gerar.style.marginTop = "12px";
+    gerar.addEventListener("click", function () { gerarConvite(gerar); });
+    b1.appendChild(gerar);
+
+    if (conviteCodigo) {
+      b1.appendChild(el("div", "codigao", conviteCodigo.codigo));
+      b1.appendChild(el("p", "codigo-prazo",
+        (conviteCodigo.pode_editar
+          ? "Quem entrar com este número vai poder marcar e mexer na sua agenda."
+          : "Quem entrar com este número só vai poder olhar.") +
+        " Vale 30 minutos e serve uma vez só — gerar outro apaga este."));
+    }
+    wrap.appendChild(b1);
+
+    /* --- quem tem acesso --- */
+    var b2 = el("section", "gl gl-clear set-block");
+    b2.appendChild(el("h2", "set-title", "Quem tem acesso"));
+    if (convidados === null) {
+      b2.appendChild(el("p", "set-help", "Verificando…"));
+    } else if (!convidados.length) {
+      b2.appendChild(el("p", "set-help", "Ninguém ainda. Sua agenda é só sua."));
+    } else {
+      convidados.forEach(function (c) {
+        var linha = el("div", "catrow");
+        var nome = el("span", "task-title", c.nome);
+        nome.style.flex = "1";
+        linha.appendChild(nome);
+        linha.appendChild(el("span", "task-when", c.can_edit ? "edita" : "só olha"));
+        var tirar = el("button", "miniicon");
+        tirar.type = "button";
+        tirar.setAttribute("aria-label", "Tirar o acesso de " + c.nome);
+        tirar.appendChild(svgPath(ICON_DEL));
+        armarExclusao(tirar, "Tirar o acesso de " + c.nome, function () { tirarAcesso(c); });
+        linha.appendChild(tirar);
+        b2.appendChild(linha);
+      });
+    }
+    wrap.appendChild(b2);
+
+    /* --- entrar com um número --- */
+    var b3 = el("section", "gl gl-clear set-block");
+    b3.appendChild(el("h2", "set-title", "Entrar numa agenda"));
+    b3.appendChild(el("p", "set-help",
+      "Recebeu um número de alguém? Digite aqui pra ver a agenda dessa pessoa."));
+    var inp = el("input", "inp");
+    inp.type = "text";
+    inp.inputMode = "numeric";
+    inp.maxLength = 6;
+    inp.placeholder = "000000";
+    inp.autocomplete = "off";
+    b3.appendChild(inp);
+    var entrar = el("button", "minibtn", "Entrar");
+    entrar.type = "button";
+    entrar.style.marginTop = "12px";
+    entrar.addEventListener("click", function () { usarConvite(inp.value, entrar); });
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); entrar.click(); }
+    });
+    b3.appendChild(entrar);
+    wrap.appendChild(b3);
+
+    return wrap;
   }
 
   /* =========================================================
@@ -3277,7 +3560,15 @@
 
     if (!settingsOpen && state.faceta === "agenda") {
       elGreet.textContent = "Agenda";
-      elSub.textContent = rotuloDoDia(agendaDia);
+      if (agendaTela === "compartilhar") {
+        elSub.textContent = "Convide alguém pra sua agenda, ou entre na agenda de outra pessoa.";
+      } else {
+        var dono = agendaDono
+          ? agendasComigo().filter(function (c) { return c.ownerId === agendaDono; })[0]
+          : null;
+        elSub.textContent = rotuloDoDia(agendaDia) +
+          (dono ? " · agenda de " + dono.nome + (dono.canEdit ? "" : " (só olhar)") : "");
+      }
       elProg.style.display = "none";
       elCats.style.display = "none";
       elAddRow.style.display = "";
@@ -3392,7 +3683,11 @@
       if (f === "checklist") listaAberta = null;
       // A agenda sempre abre no hoje, mesmo que ontem você tenha ficado
       // olhando outra semana.
-      if (f === "agenda") { agendaDia = todayISO; agendaSemana = currentMonday; }
+      if (f === "agenda") {
+        agendaDia = todayISO;
+        agendaSemana = currentMonday;
+        agendaTela = "dia";
+      }
       save();
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -3840,7 +4135,7 @@
     }
 
     // Agenda, pelo mesmo motivo: falha aqui não pode derrubar as tarefas.
-    var appts = null, agShares = null;
+    var appts = null, agShares = null, agendasComigo = null;
     if (agendaOk) {
       var ea = await Promise.all([
         sb.from("appointments").select("id,owner_id,day_date,time_of_day,name,kind,note,done,created_at"),
@@ -3853,6 +4148,12 @@
       } else {
         appts = ea[0].data || [];
         agShares = ea[1].data || [];
+        // O nome de quem compartilhou vem por função separada: o RLS de
+        // profiles não deixa ninguém ler o nome de outra pessoa, e está certo
+        // que não deixe. A função devolve só o nome, e só de quem já aceitou
+        // um convite meu. Erro aqui não é fatal — o seletor cai no id.
+        var rc = await sb.rpc("agendas_comigo");
+        if (!rc.error) agendasComigo = rc.data || [];
       }
     }
 
@@ -3863,6 +4164,7 @@
       checks: res[3].data || [],
       appts: appts,
       agShares: agShares,
+      agendasComigo: agendasComigo,
       // null aqui quer dizer "não deu para ler", que é diferente de "está
       // vazio". Quem reconstrói o estado precisa dessa diferença para não
       // apagar as listas locais por causa de uma falha de leitura.
@@ -3995,6 +4297,14 @@
     } else {
       st.agenda = (state && Array.isArray(state.agenda)) ? state.agenda : [];
     }
+
+    // Quem me deu acesso à agenda dele. Não entra no sincronismo: é uma
+    // consulta de leitura, não um dado meu que eu grave de volta.
+    st.agendasComigo = d.agendasComigo
+      ? d.agendasComigo.map(function (r) {
+          return { ownerId: r.owner_id, nome: r.nome || "Sem nome", canEdit: !!r.can_edit };
+        })
+      : ((state && Array.isArray(state.agendasComigo)) ? state.agendasComigo : []);
 
     return ensureShape(st);
   }
