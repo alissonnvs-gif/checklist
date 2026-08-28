@@ -950,6 +950,7 @@
     if (!/^\d{2}:\d{2}$/.test(parsed.notif.hora)) parsed.notif.hora = "07:00";
     if (typeof parsed.notif.antes60 !== "boolean") parsed.notif.antes60 = true;
     if (typeof parsed.notif.antes30 !== "boolean") parsed.notif.antes30 = true;
+    if (typeof parsed.notif.agenda !== "boolean") parsed.notif.agenda = true;
     if (typeof parsed.notif.tz !== "string" || !parsed.notif.tz) {
       parsed.notif.tz = fusoDoAparelho();
     }
@@ -2913,6 +2914,9 @@
     caixa.appendChild(linha);
 
     caixa.appendChild(chaveNotif("Mandar o resumo do dia", "resumo"));
+    // Aviso próprio da agenda, no mesmo horário do resumo: são dois alertas
+    // separados, um de cada coisa. Só aparece quando o banco já tem a coluna.
+    if (colunaAvisoAgenda) caixa.appendChild(chaveNotif("Mandar a agenda do dia", "agenda"));
     caixa.appendChild(chaveNotif("Avisar 1 hora antes", "antes60"));
     caixa.appendChild(chaveNotif("Avisar 30 minutos antes", "antes30"));
     return caixa;
@@ -3463,6 +3467,10 @@
     return /schema cache|does not exist|could not find/i.test(err.message || "");
   }
 
+  // Vira false na primeira vez que o servidor recusar a coluna notif_agenda,
+  // e o app segue funcionando sem esse aviso até o SQL ser rodado.
+  var colunaAvisoAgenda = true;
+
   function desiredRows() {
     var rows = { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {} };
     var n = state.notif || {};
@@ -3475,6 +3483,10 @@
       notif_30: n.antes30 !== false,
       timezone: n.tz || fusoDoAparelho()
     };
+    // A coluna do aviso da agenda é nova. Se o banco desta conta ainda não a
+    // tiver, ela sai do envio em vez de o perfil inteiro ser recusado — e um
+    // perfil recusado travaria TODO o sincronismo, não só o aviso.
+    if (colunaAvisoAgenda) rows.profile.notif_agenda = n.agenda !== false;
 
     cats().forEach(function (c, i) {
       rows.cats[c.id] = { id: c.id, label: c.label, palette: c.palette, sort_order: i };
@@ -3635,7 +3647,17 @@
     // 1. perfil (nome e tema)
     var pfp = fpOf(want.profile);
     if (srv.profile !== pfp) {
-      fail(await sb.from("profiles").upsert(Object.assign({ id: uidv }, want.profile)));
+      var rp = await sb.from("profiles").upsert(Object.assign({ id: uidv }, want.profile));
+      if (rp.error && colunaAvisoAgenda && tabelaFaltando(rp.error)) {
+        // O banco ainda não tem a coluna do aviso da agenda. Desliga esse
+        // pedaço e manda o perfil sem ele — em vez de deixar o sincronismo
+        // inteiro parado esperando um SQL que talvez demore a ser rodado.
+        colunaAvisoAgenda = false;
+        want = desiredRows();
+        pfp = fpOf(want.profile);
+        rp = await sb.from("profiles").upsert(Object.assign({ id: uidv }, want.profile));
+      }
+      fail(rp);
       srv.profile = pfp;
     }
 
@@ -3786,9 +3808,10 @@
 
   async function pullOnce() {
     var res = await Promise.all([
-      sb.from("profiles")
-        .select("display_name,theme,notif_resumo,notif_resumo_hora,notif_60,notif_30,timezone")
-        .eq("id", currentUser.id).maybeSingle(),
+      // "*" em vez da lista de colunas: pedir uma coluna que o banco ainda não
+      // tem faz a busca inteira falhar, e a busca inteira falhando levaria
+      // junto as tarefas. Aqui só volta a própria linha da própria conta.
+      sb.from("profiles").select("*").eq("id", currentUser.id).maybeSingle(),
       sb.from("categories").select("id,label,palette,sort_order").order("sort_order", { ascending: true }),
       sb.from("tasks").select("id,category_id,kind,title,note,days,due_date,time_of_day,done,created_at"),
       sb.from("task_checks").select("task_id,week_monday,weekday")
@@ -3860,6 +3883,7 @@
         hora: d.profile.notif_resumo_hora || "07:00",
         antes60: d.profile.notif_60 !== false,
         antes30: d.profile.notif_30 !== false,
+        agenda: d.profile.notif_agenda !== false,
         tz: d.profile.timezone || fusoDoAparelho()
       } : null,
       viewingWeek: (state && state.viewingWeek) || mondayOf(new Date()),

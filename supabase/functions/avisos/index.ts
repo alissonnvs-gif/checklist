@@ -4,8 +4,10 @@
 //  Acorda de 5 em 5 minutos (chamada pelo agendamento do passo 6) e
 //  pergunta: tem alguém para avisar agora?
 //
-//  Três avisos possíveis:
+//  Quatro avisos possíveis:
 //    - resumo do dia, no horário que a pessoa escolheu
+//    - resumo da AGENDA do dia, no MESMO horário, como aviso
+//      separado (dois alertas, não um com as duas coisas dentro)
 //    - 1 hora antes de uma tarefa com horário
 //    - 30 minutos antes da mesma tarefa
 //
@@ -138,9 +140,12 @@ Deno.serve(async (req) => {
   const usuarios = [...new Set(inscricoes.map((i) => i.user_id))];
 
   const [perfis, tarefas, marcas, jaEnviados] = await Promise.all([
-    sb.from("profiles")
-      .select("id,display_name,notif_resumo,notif_resumo_hora,notif_60,notif_30,timezone")
-      .in("id", usuarios),
+    // "*" em vez da lista de colunas de propósito: pedir uma coluna que ainda
+    // não existe derruba a função inteira, e derrubar esta função significa
+    // ninguém receber aviso nenhum. Com "*" ela funciona antes e depois de o
+    // notif_agenda existir, e a ordem entre rodar o SQL e publicar a função
+    // deixa de ser uma armadilha.
+    sb.from("profiles").select("*").in("id", usuarios),
     sb.from("tasks")
       .select("user_id,id,kind,title,days,due_date,time_of_day,done")
       .in("user_id", usuarios),
@@ -150,6 +155,27 @@ Deno.serve(async (req) => {
     sb.from("push_sent").select("user_id,chave").in("user_id", usuarios),
   ]);
   for (const r of [perfis, tarefas, marcas, jaEnviados]) if (r.error) throw r.error;
+
+  // Atendimentos da agenda. Consulta separada e que engole o próprio erro: se
+  // a agenda ainda não existir neste banco, os avisos das tarefas continuam
+  // saindo normalmente em vez de a função inteira parar.
+  let atendimentos: any[] = [];
+  {
+    const dia = 86400000;
+    const de = new Date(instante.getTime() - dia).toISOString().slice(0, 10);
+    // Um dia para trás e um para frente porque o "hoje" de cada pessoa depende
+    // do fuso dela, e o servidor pensa em UTC. O filtro exato por L.data
+    // acontece lá embaixo, já dentro do fuso certo.
+    const ate = new Date(instante.getTime() + dia).toISOString().slice(0, 10);
+    const r = await sb
+      .from("appointments")
+      .select("owner_id,day_date,time_of_day,name,done")
+      .in("owner_id", usuarios)
+      .gte("day_date", de)
+      .lte("day_date", ate);
+    if (r.error) console.error("agenda indisponivel:", r.error.message);
+    else atendimentos = r.data ?? [];
+  }
 
   const enviadoAntes = new Set(
     (jaEnviados.data ?? []).map((r) => `${r.user_id}|${r.chave}`),
@@ -227,6 +253,33 @@ Deno.serve(async (req) => {
         `${abertas.length} ${abertas.length === 1 ? "tarefa" : "tarefas"} hoje` +
           (comHora ? `, ${comHora} com horário marcado.` : "."),
         `resumo-${L.data}`,
+      );
+    }
+
+    // 1b. Resumo da AGENDA — mesmo horário do resumo das tarefas, aviso à
+    //     parte. Interruptor próprio: quem desliga o resumo das tarefas pode
+    //     querer continuar recebendo a agenda, e vice-versa. Como as tarefas,
+    //     só sai se houver algo — ninguém precisa de um aviso para dizer que
+    //     não tem ninguém marcado.
+    const meusAtend = atendimentos
+      .filter((a) => a.owner_id === perfil.id && a.day_date === L.data && !a.done)
+      .sort((x, y) =>
+        (x.time_of_day || "99:99") < (y.time_of_day || "99:99") ? -1 : 1
+      );
+
+    if (
+      perfil.notif_agenda !== false && horaResumo !== null && meusAtend.length > 0 &&
+      L.minutos >= horaResumo && L.minutos < horaResumo + JANELA_RESUMO_MIN
+    ) {
+      const primeiro = meusAtend.find((a) => a.time_of_day);
+      await disparar(
+        `agenda:${L.data}`,
+        "Sua agenda hoje",
+        `${meusAtend.length} ${meusAtend.length === 1 ? "atendimento" : "atendimentos"}` +
+          (primeiro ? `, o primeiro às ${primeiro.time_of_day}.` : "."),
+        // Tag diferente da do resumo das tarefas, senão um substituiria o
+        // outro na barra de notificações e só um dos dois apareceria.
+        `agenda-${L.data}`,
       );
     }
 
