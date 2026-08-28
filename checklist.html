@@ -498,13 +498,21 @@
     box-shadow: inset 0 1.5px 1px var(--f-top), inset 0 0 0 1px var(--f-rim);
   }
 
-  /* ================= LISTAS ================= */
+  /* ================= LISTAS E AGENDA ================= */
 
-  /* As abas têm cor escolhida pelo usuário; as Listas não são uma aba, então
-     a cor é fixa — turquesa — declarada no mesmo formato (--c1/--c2/--c-ink)
-     para reaproveitar sem alteração as linhas, a lâmpada e o formulário. */
+  /* As abas têm cor escolhida pelo usuário; Listas e Agenda não são abas,
+     então a cor é fixa — turquesa e violeta — declarada no mesmo formato
+     (--c1/--c2/--c-ink) para reaproveitar sem alteração as linhas, a lâmpada,
+     a faixa da semana e o formulário. Cor diferente separa as duas de relance,
+     sem precisar ler o título. */
   .faceta-listas { --c1: #5FE0C8; --c2: #2FB6C4; --c-ink: #0E7C86; }
   :root[data-theme="noite"] .faceta-listas { --c-ink: #8AE8DC; }
+  .faceta-agenda { --c1: #8593FF; --c2: #B87CFF; --c-ink: #6A4BD4; }
+  :root[data-theme="noite"] .faceta-agenda { --c-ink: #C9AEFF; }
+
+  /* Na agenda o destaque branco marca o dia ESCOLHIDO, então o dia de hoje
+     precisa de outro sinal para não desaparecer quando você olha outro dia. */
+  .daypill[data-hoje="true"] .dp-l { color: var(--c-ink); }
 
   .listcard {
     display: flex; align-items: center; gap: 12px; width: 100%;
@@ -539,6 +547,7 @@
 
   .fields-row { display: flex; gap: 9px; }
   .fields-row .field-qty { flex: 0 0 104px; }
+  .fields-row .field-hora { flex: 0 0 122px; }
   .fields-row .field-name { flex: 1; min-width: 0; }
 
   /* ================= TOAST ================= */
@@ -620,6 +629,7 @@
   <div class="facetarow" id="facetarow">
     <div class="gl gl-clear facetas" role="group" aria-label="Seções do app">
       <button class="fc" type="button" data-faceta="checklist">Tarefas</button>
+      <button class="fc" type="button" data-faceta="agenda">Agenda</button>
       <button class="fc" type="button" data-faceta="listas">Listas</button>
     </div>
   </div>
@@ -822,6 +832,7 @@
       viewingWeek: mondayOf(new Date()),
       seedVersion: SEED_VERSION,
       lists: [],
+      agenda: [],
       categories: DEFAULT_CATEGORIES.map(function (c) { return { id: c.id, label: c.label, palette: c.palette }; })
     };
     DEFAULT_CATEGORIES.forEach(function (cat) {
@@ -890,6 +901,24 @@
     if (!parsed.srv.checks) parsed.srv.checks = {};
     if (!parsed.srv.lists) parsed.srv.lists = {};
     if (!parsed.srv.items) parsed.srv.items = {};
+    if (!parsed.srv.appts) parsed.srv.appts = {};
+
+    // ---- agenda ----
+    // Sem data válida o atendimento não teria dia nenhum onde aparecer; some
+    // do estado em vez de virar uma linha invisível que nunca mais some.
+    if (!Array.isArray(parsed.agenda)) parsed.agenda = [];
+    parsed.agenda = parsed.agenda.filter(function (a) {
+      return a && typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date);
+    });
+    parsed.agenda.forEach(function (a) {
+      if (typeof a.name !== "string") a.name = "";
+      if (typeof a.time !== "string") a.time = "";
+      if (typeof a.kind !== "string") a.kind = "";
+      if (typeof a.note !== "string") a.note = "";
+      a.done = !!a.done;
+      if (a.canEdit === undefined) a.canEdit = true;
+      if (!a.createdAt) a.createdAt = Date.now();
+    });
 
     // ---- listas ----
     // canEdit fica gravado junto porque numa lista compartilhada quem manda é
@@ -908,7 +937,7 @@
         if (!it.createdAt) it.createdAt = Date.now();
       });
     });
-    if (parsed.faceta !== "listas") parsed.faceta = "checklist";
+    if (parsed.faceta !== "listas" && parsed.faceta !== "agenda") parsed.faceta = "checklist";
     delete parsed.syncMeta;
     delete parsed.syncKnownIds;
     if (!parsed.overviewSeen) { parsed.activeTab = OVERVIEW_ID; parsed.overviewSeen = true; }
@@ -1061,6 +1090,7 @@
   var elRodape = document.querySelector("footer.note");
   var RODAPE_ROTINA = elRodape ? elRodape.textContent : "";
   var RODAPE_LISTAS = "Suas listas ficam guardadas na conta e aparecem em qualquer aparelho onde você entrar.";
+  var RODAPE_AGENDA = "Cada atendimento é marcado numa data. Atendido fica no lugar, riscado — o dia inteiro continua à vista.";
 
   elDate.textContent = today.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 
@@ -1991,6 +2021,14 @@
     elFormSlot.innerHTML = "";
     elNewBtn.setAttribute("aria-expanded", String(formOpen));
 
+    if (state.faceta === "agenda") {
+      elNewLabel.textContent = "Novo atendimento";
+      elAddRow.style.display = "";
+      if (!formOpen) return;
+      elFormSlot.appendChild(formAtendimento(null));
+      return;
+    }
+
     if (state.faceta === "listas") {
       var aberta = listaAberta ? listaDe(listaAberta) : null;
       elNewLabel.textContent = aberta ? "Novo item" : "Nova lista";
@@ -2400,6 +2438,340 @@
 
     [inpQ, inpN].forEach(function (campo2) {
       campo2.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); guardar(); }
+      });
+    });
+
+    box.appendChild(form);
+    return box;
+  }
+
+  /* =========================================================
+     AGENDA — a segunda faceta
+
+     Um dia por vez, escolhido na faixa da semana. Mostra SÓ os
+     atendimentos marcados, em ordem de hora — decisão dele: uma
+     grade com os horários vazios exigiria configurar expediente
+     e pesaria no celular sem necessidade.
+
+     Cada atendimento é avulso (sem repetição), com nome, hora,
+     tipo de sessão e observação. Atendido não some da lista:
+     fica no lugar, riscado, igual à tarefa concluída.
+
+     O dia visto NÃO é gravado de propósito: abrir a agenda tem
+     que cair no hoje, não no dia que ficou aberto ontem.
+     ========================================================= */
+
+  var agendaDia = todayISO;          // dia sendo visto
+  var agendaSemana = currentMonday;  // semana da faixa
+  var atendEditando = null;          // id do atendimento em edição
+  var agendaOk = true;               // false quando o banco ainda não tem as tabelas
+
+  function agenda() {
+    if (!Array.isArray(state.agenda)) state.agenda = [];
+    return state.agenda;
+  }
+
+  function podeEditarAtend(a) { return !a || a.canEdit !== false; }
+
+  // Quem não tem hora vai para o fim: um encaixe sem hora não pode empurrar
+  // para baixo quem tem hora marcada.
+  function atendimentosDe(iso) {
+    return agenda().filter(function (a) { return a.date === iso; })
+      .sort(function (x, y) {
+        var hx = x.time || "99:99", hy = y.time || "99:99";
+        if (hx !== hy) return hx < hy ? -1 : 1;
+        return x.createdAt - y.createdAt;
+      });
+  }
+
+  function rotuloDoDia(iso) {
+    var d = new Date(iso + "T00:00:00");
+    var texto = capitalize(d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }));
+    return iso === todayISO ? "Hoje — " + texto : texto;
+  }
+
+  function irParaDia(iso) {
+    agendaDia = iso;
+    atendEditando = null;
+    formOpen = false;
+    render();
+  }
+
+  function moverSemanaAgenda(delta) {
+    var diaDaSemana = new Date(agendaDia + "T00:00:00").getDay();
+    var pos = WEEK_ORDER.indexOf(diaDaSemana);
+    agendaSemana = addWeeks(agendaSemana, delta);
+    // O dia escolhido acompanha a semana mantendo o mesmo dia: quem estava
+    // vendo terça continua vendo terça, uma semana adiante.
+    irParaDia(isoOf(dayOfWeek(agendaSemana, pos < 0 ? 0 : pos)));
+  }
+
+  function renderAgenda() {
+    elWeekSlot.innerHTML = "";
+    elWeekSlot.appendChild(agendaWeekBar());
+
+    elBody.innerHTML = "";
+    var wrap = el("div", "faceta-agenda");
+    var doDia = atendimentosDe(agendaDia);
+
+    if (!doDia.length) {
+      wrap.appendChild(el("p", "empty", "Nenhum atendimento neste dia."));
+    } else {
+      var faltam = doDia.filter(function (a) { return !a.done; }).length;
+      var sec = el("div", "sec-head");
+      sec.appendChild(el("span", "sec-name", "Atendimentos"));
+      sec.appendChild(el("span", "sec-note",
+        faltam ? faltam + (faltam === 1 ? " por atender" : " por atender") : "todos atendidos"));
+      wrap.appendChild(sec);
+
+      var lista = el("div", "list");
+      doDia.forEach(function (a) { lista.appendChild(atendRow(a)); });
+      wrap.appendChild(lista);
+    }
+
+    elBody.appendChild(wrap);
+  }
+
+  function agendaWeekBar() {
+    var wrap = el("section", "gl gl-clear weekbar faceta-agenda");
+
+    var head = el("div", "week-head");
+    var lbl = el("span", "week-label");
+    lbl.appendChild(document.createTextNode("Semana de "));
+    var b = document.createElement("b");
+    b.textContent = formatShort(agendaSemana, 0) + " a " + formatShort(agendaSemana, 6);
+    lbl.appendChild(b);
+    head.appendChild(lbl);
+
+    var nav = el("div", "week-nav");
+
+    var prev = el("button", "wbtn");
+    prev.type = "button";
+    prev.setAttribute("aria-label", "Semana anterior");
+    prev.appendChild(svgPath(ICON_PREV));
+    prev.addEventListener("click", function () { moverSemanaAgenda(-1); });
+    nav.appendChild(prev);
+
+    if (agendaDia !== todayISO) {
+      var hoje = el("button", "wbtn wbtn-today", "Hoje");
+      hoje.type = "button";
+      hoje.addEventListener("click", function () {
+        agendaSemana = currentMonday;
+        irParaDia(todayISO);
+      });
+      nav.appendChild(hoje);
+    }
+
+    var next = el("button", "wbtn");
+    next.type = "button";
+    next.setAttribute("aria-label", "Próxima semana");
+    next.appendChild(svgPath(ICON_NEXT));
+    next.addEventListener("click", function () { moverSemanaAgenda(1); });
+    nav.appendChild(next);
+
+    head.appendChild(nav);
+    wrap.appendChild(head);
+
+    var strip = el("div", "daystrip");
+    WEEK_ORDER.forEach(function (wd, idx) {
+      var d = dayOfWeek(agendaSemana, idx);
+      var iso = isoOf(d);
+      var quantos = atendimentosDe(iso).length;
+
+      var pill = el("button", "daypill");
+      pill.type = "button";
+      // Aqui data-today marca o dia ESCOLHIDO — é o destaque que o CSS já tem.
+      // O dia de hoje ganha o próprio sinal em data-hoje.
+      pill.setAttribute("data-today", String(iso === agendaDia));
+      pill.setAttribute("data-hoje", String(iso === todayISO));
+      pill.setAttribute("data-full", String(quantos > 0));
+      pill.setAttribute("aria-label", DAY_LABEL[wd] + ", " +
+        (quantos === 1 ? "1 atendimento" : quantos + " atendimentos") +
+        (iso === todayISO ? " (hoje)" : ""));
+      pill.appendChild(el("span", "dp-l", DAY_SHORT[wd]));
+      pill.appendChild(el("span", "dp-n", String(d.getDate()).padStart(2, "0")));
+      pill.appendChild(el("span", "dp-dot"));
+      pill.addEventListener("click", function () { irParaDia(iso); });
+      strip.appendChild(pill);
+    });
+    wrap.appendChild(strip);
+
+    return wrap;
+  }
+
+  function atendRow(a) {
+    if (atendEditando === a.id) return formAtendimento(a);
+
+    var row = el("div", "gl gl-clear task");
+    row.setAttribute("data-on", String(!!a.done));
+
+    var lamp = el("button", "lamp");
+    lamp.type = "button";
+    lamp.setAttribute("aria-label", a.done ? "Desmarcar atendimento" : "Marcar como atendido");
+    lamp.appendChild(svgPath(ICON_TICK, "tick"));
+    if (!podeEditarAtend(a)) {
+      lamp.disabled = true;
+      lamp.style.cursor = "default";
+    } else {
+      lamp.addEventListener("click", function () {
+        a.done = !a.done;
+        save();
+        render();
+      });
+    }
+    row.appendChild(lamp);
+
+    var body = el("span", "task-body");
+    body.appendChild(el("span", "task-title", a.name));
+    if (a.note) body.appendChild(el("span", "task-note", a.note));
+    if (a.kind) {
+      var meta = el("span", "task-meta");
+      meta.appendChild(el("span", "task-cat", a.kind));
+      body.appendChild(meta);
+    }
+    row.appendChild(body);
+
+    if (a.time) row.appendChild(el("span", "task-time", a.time));
+
+    if (podeEditarAtend(a)) {
+      var acts = el("div", "task-acts");
+
+      var edit = el("button", "iconbtn");
+      edit.type = "button";
+      edit.setAttribute("aria-label", "Editar atendimento");
+      edit.appendChild(svgPath(ICON_EDIT));
+      edit.addEventListener("click", function () {
+        atendEditando = a.id;
+        formOpen = false;
+        render();
+      });
+      acts.appendChild(edit);
+
+      var del = el("button", "iconbtn");
+      del.type = "button";
+      del.setAttribute("aria-label", "Excluir atendimento");
+      del.appendChild(svgPath(ICON_DEL));
+      armarExclusao(del, "Excluir atendimento", function () { excluirAtendimento(a); });
+      acts.appendChild(del);
+
+      row.appendChild(acts);
+    }
+
+    return row;
+  }
+
+  function excluirAtendimento(a) {
+    var i = agenda().indexOf(a);
+    if (i >= 0) agenda().splice(i, 1);
+    atendEditando = null;
+    save();
+    render();
+    showToast("Atendimento excluído.");
+  }
+
+  // Serve para marcar (a = null) e para editar.
+  function formAtendimento(a) {
+    var novo = !a;
+    var box = el("div", novo ? "formwrap faceta-agenda" : "");
+    var form = el("div", "gl gl-clear form");
+
+    var linha = el("div", "fields-row");
+
+    var fh = el("div", "field field-hora");
+    fh.appendChild(el("span", "field-label", "Hora"));
+    var inpHora = el("input", "inp");
+    inpHora.type = "time";
+    inpHora.value = novo ? "" : (a.time || "");
+    fh.appendChild(inpHora);
+
+    var fn = el("div", "field field-name");
+    fn.appendChild(el("span", "field-label", "Quem"));
+    var inpNome = el("input", "inp");
+    inpNome.type = "text";
+    inpNome.placeholder = "Nome do paciente";
+    inpNome.value = novo ? "" : (a.name || "");
+    fn.appendChild(inpNome);
+
+    linha.appendChild(fh);
+    linha.appendChild(fn);
+    form.appendChild(linha);
+
+    var ft = el("div", "field");
+    ft.appendChild(el("span", "field-label", "Tipo de sessão"));
+    var inpTipo = el("input", "inp");
+    inpTipo.type = "text";
+    inpTipo.placeholder = "Primeira consulta, retorno...";
+    inpTipo.value = novo ? "" : (a.kind || "");
+    ft.appendChild(inpTipo);
+    form.appendChild(ft);
+
+    var fo = el("div", "field");
+    fo.appendChild(el("span", "field-label", "Observação"));
+    var inpObs = el("input", "inp");
+    inpObs.type = "text";
+    inpObs.placeholder = "O que você precisa lembrar";
+    inpObs.value = novo ? "" : (a.note || "");
+    fo.appendChild(inpObs);
+    form.appendChild(fo);
+
+    function guardar() {
+      var nome = inpNome.value.replace(/\s+/g, " ").trim();
+      if (!nome) { inpNome.focus(); return; }
+      var hora = inpHora.value || "";
+      var tipo = inpTipo.value.replace(/\s+/g, " ").trim();
+      var obs = inpObs.value.replace(/\s+/g, " ").trim();
+
+      // Horário ocupado AVISA, não impede: encaixe em cima do outro existe na
+      // vida real, e o app não é quem decide isso.
+      if (hora) {
+        var choque = atendimentosDe(agendaDia).filter(function (o) {
+          return o.time === hora && (novo || o.id !== a.id);
+        })[0];
+        if (choque) showToast("Atenção: " + choque.name + " já está às " + hora + ".");
+      }
+
+      if (novo) {
+        agenda().push({
+          id: "a" + uid(),
+          ownerId: currentUser ? currentUser.id : null,
+          canEdit: true,
+          date: agendaDia, time: hora, name: nome, kind: tipo, note: obs,
+          done: false, createdAt: Date.now()
+        });
+        formOpen = false;
+      } else {
+        a.time = hora; a.name = nome; a.kind = tipo; a.note = obs;
+        atendEditando = null;
+      }
+      save();
+      render();
+    }
+
+    var acts = el("div", "form-acts");
+    var ok = el("button", "minibtn", novo ? "Marcar" : "Salvar");
+    ok.type = "button";
+    ok.addEventListener("click", guardar);
+    acts.appendChild(ok);
+
+    var cancela = el("button", "minibtn minibtn-ghost", "Cancelar");
+    cancela.type = "button";
+    cancela.addEventListener("click", function () {
+      if (novo) formOpen = false; else atendEditando = null;
+      render();
+    });
+    acts.appendChild(cancela);
+
+    if (!novo) {
+      var apagar = el("button", "minibtn minibtn-danger", "Excluir");
+      apagar.type = "button";
+      apagar.addEventListener("click", function () { excluirAtendimento(a); });
+      acts.appendChild(apagar);
+    }
+    form.appendChild(acts);
+
+    [inpHora, inpNome, inpTipo, inpObs].forEach(function (campo) {
+      campo.addEventListener("keydown", function (e) {
         if (e.key === "Enter") { e.preventDefault(); guardar(); }
       });
     });
@@ -2893,7 +3265,21 @@
     renderBg();
     renderFacetas();
     if (elRodape) {
-      elRodape.textContent = (!settingsOpen && state.faceta === "listas") ? RODAPE_LISTAS : RODAPE_ROTINA;
+      elRodape.textContent = settingsOpen ? RODAPE_ROTINA
+        : state.faceta === "listas" ? RODAPE_LISTAS
+        : state.faceta === "agenda" ? RODAPE_AGENDA
+        : RODAPE_ROTINA;
+    }
+
+    if (!settingsOpen && state.faceta === "agenda") {
+      elGreet.textContent = "Agenda";
+      elSub.textContent = rotuloDoDia(agendaDia);
+      elProg.style.display = "none";
+      elCats.style.display = "none";
+      elAddRow.style.display = "";
+      renderAgenda();
+      renderForm();
+      return;
     }
 
     if (!settingsOpen && state.faceta === "listas") {
@@ -2979,9 +3365,10 @@
     [].slice.call(elFacetaRow.querySelectorAll(".fc")).forEach(function (b) {
       var f = b.getAttribute("data-faceta");
       b.setAttribute("aria-pressed", String(state.faceta === f));
-      // Sem as tabelas no banco, o botão Listas nem aparece — melhor não
-      // existir do que existir e abrir uma tela que não salva.
+      // Sem as tabelas no banco, o botão nem aparece — melhor não existir do
+      // que existir e abrir uma tela que não salva.
       if (f === "listas") b.style.display = listasOk ? "" : "none";
+      if (f === "agenda") b.style.display = agendaOk ? "" : "none";
     });
   }
 
@@ -2997,7 +3384,11 @@
       formOpen = false;
       draft = null;
       itemEditando = null;
+      atendEditando = null;
       if (f === "checklist") listaAberta = null;
+      // A agenda sempre abre no hoje, mesmo que ontem você tenha ficado
+      // olhando outra semana.
+      if (f === "agenda") { agendaDia = todayISO; agendaSemana = currentMonday; }
       save();
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -3025,7 +3416,8 @@
       formOpen = true;
       editingId = null;
       itemEditando = null;
-      draft = state.faceta === "listas" ? null : makeDraft(null);
+      atendEditando = null;
+      draft = (state.faceta === "checklist") ? makeDraft(null) : null;
     }
     renderForm();
     if (formOpen) {
@@ -3072,7 +3464,7 @@
   }
 
   function desiredRows() {
-    var rows = { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {} };
+    var rows = { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {} };
     var n = state.notif || {};
     rows.profile = {
       display_name: state.userName || "",
@@ -3146,6 +3538,22 @@
       });
     });
 
+    // Agenda. Mesma regra: só sobe o que esta conta pode gravar.
+    agenda().forEach(function (a) {
+      if (!podeEditarAtend(a)) return;
+      rows.appts[a.id] = {
+        id: a.id,
+        owner_id: a.ownerId || meuId,
+        day_date: a.date,
+        time_of_day: a.time || "",
+        name: a.name || "",
+        kind: a.kind || "",
+        note: a.note || "",
+        done: !!a.done,
+        created_at: new Date(a.createdAt || Date.now()).toISOString()
+      };
+    });
+
     return rows;
   }
 
@@ -3164,19 +3572,20 @@
   // Registra que o servidor está em dia com o que temos aqui.
   function markServerClean() {
     var want = desiredRows();
-    var srv = { profile: fpOf(want.profile), cats: {}, tasks: {}, checks: {}, lists: {}, items: {} };
+    var srv = { profile: fpOf(want.profile), cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {} };
     Object.keys(want.cats).forEach(function (id) { srv.cats[id] = fpOf(want.cats[id]); });
     Object.keys(want.tasks).forEach(function (id) { srv.tasks[id] = fpOf(want.tasks[id]); });
     Object.keys(want.checks).forEach(function (k) { srv.checks[k] = 1; });
     Object.keys(want.lists).forEach(function (id) { srv.lists[id] = fpOf(want.lists[id]); });
     Object.keys(want.items).forEach(function (id) { srv.items[id] = fpOf(want.items[id]); });
+    Object.keys(want.appts).forEach(function (id) { srv.appts[id] = fpOf(want.appts[id]); });
     state.srv = srv;
     localDirty = false;
   }
 
   // Registra que o servidor não tem nada nosso — tudo precisa subir.
   function markServerEmpty() {
-    state.srv = { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {} };
+    state.srv = { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {} };
     localDirty = true;
   }
 
@@ -3331,6 +3740,30 @@
       fail(await sb.from("lists").delete().in("id", listGone));
       listGone.forEach(function (id) { delete srv.lists[id]; });
     }
+
+    if (!agendaOk) return;
+
+    // 11. atendimentos novos ou alterados
+    var apPend = [];
+    Object.keys(want.appts).forEach(function (id) {
+      var fp = fpOf(want.appts[id]);
+      if (srv.appts[id] !== fp) apPend.push([id, fp, want.appts[id]]);
+    });
+    if (apPend.length) {
+      var ra = await sb.from("appointments").upsert(apPend.map(function (p) { return p[2]; }));
+      if (ra.error) {
+        if (tabelaFaltando(ra.error)) { agendaOk = false; return; }
+        throw ra.error;
+      }
+      apPend.forEach(function (p) { srv.appts[p[0]] = p[1]; });
+    }
+
+    // 12. atendimentos removidos
+    var apGone = Object.keys(srv.appts).filter(function (id) { return !want.appts[id]; });
+    if (apGone.length) {
+      fail(await sb.from("appointments").delete().in("id", apGone));
+      apGone.forEach(function (id) { delete srv.appts[id]; });
+    }
   }
 
   // O banco recusou uma lista (limite estourado). Ela não existe lá, então não
@@ -3383,11 +3816,30 @@
       }
     }
 
+    // Agenda, pelo mesmo motivo: falha aqui não pode derrubar as tarefas.
+    var appts = null, agShares = null;
+    if (agendaOk) {
+      var ea = await Promise.all([
+        sb.from("appointments").select("id,owner_id,day_date,time_of_day,name,kind,note,done,created_at"),
+        sb.from("agenda_shares").select("owner_id,user_id,can_edit")
+      ]);
+      var erroAg = ea[0].error || ea[1].error;
+      if (erroAg) {
+        if (tabelaFaltando(erroAg)) agendaOk = false;
+        else throw erroAg;
+      } else {
+        appts = ea[0].data || [];
+        agShares = ea[1].data || [];
+      }
+    }
+
     return {
       profile: res[0].data || null,
       cats: res[1].data || [],
       tasks: res[2].data || [],
       checks: res[3].data || [],
+      appts: appts,
+      agShares: agShares,
       // null aqui quer dizer "não deu para ler", que é diferente de "está
       // vazio". Quem reconstrói o estado precisa dessa diferença para não
       // apagar as listas locais por causa de uma falha de leitura.
@@ -3493,6 +3945,33 @@
       st.lists = (state && Array.isArray(state.lists)) ? state.lists : [];
     }
 
+    // ---- agenda ----
+    if (d.appts) {
+      // Aqui o convite é por DONO da agenda, não por linha: quem me deixou
+      // editar a agenda dele me deixou editar tudo que está nela.
+      var convAgenda = {};
+      (d.agShares || []).forEach(function (s) {
+        if (currentUser && s.user_id === currentUser.id) convAgenda[s.owner_id] = !!s.can_edit;
+      });
+
+      st.agenda = d.appts.map(function (r) {
+        return {
+          id: r.id,
+          ownerId: r.owner_id,
+          canEdit: !!(currentUser && r.owner_id === currentUser.id) || convAgenda[r.owner_id] === true,
+          date: r.day_date,
+          time: r.time_of_day || "",
+          name: r.name || "",
+          kind: r.kind || "",
+          note: r.note || "",
+          done: !!r.done,
+          createdAt: Date.parse(r.created_at) || Date.now()
+        };
+      });
+    } else {
+      st.agenda = (state && Array.isArray(state.agenda)) ? state.agenda : [];
+    }
+
     return ensureShape(st);
   }
 
@@ -3510,7 +3989,8 @@
   var lastPullAt = 0;
 
   function pullBloqueado() {
-    return !currentUser || editingId || itemEditando || formOpen || settingsOpen || localDirty || pushing;
+    return !currentUser || editingId || itemEditando || atendEditando ||
+           formOpen || settingsOpen || localDirty || pushing;
   }
 
   function maybePull(force) {
@@ -3531,7 +4011,8 @@
         && sameFps(want.tasks, anterior.srv.tasks)
         && sameFps(want.checks, anterior.srv.checks, true)
         && sameFps(want.lists, anterior.srv.lists || {})
-        && sameFps(want.items, anterior.srv.items || {});
+        && sameFps(want.items, anterior.srv.items || {})
+        && sameFps(want.appts, anterior.srv.appts || {});
       if (igual) { state = anterior; return; }
 
       markServerClean();
@@ -3594,6 +4075,13 @@
     // sem receber aviso nenhum. Quem separa o que cada um recebe é o RLS.
     if (listasOk) {
       ["lists", "list_items", "list_shares"].forEach(function (tabela) {
+        canalTempoReal.on("postgres_changes",
+          { event: "*", schema: "public", table: tabela },
+          aoReceberAviso);
+      });
+    }
+    if (agendaOk) {
+      ["appointments", "agenda_shares"].forEach(function (tabela) {
         canalTempoReal.on("postgres_changes",
           { event: "*", schema: "public", table: tabela },
           aoReceberAviso);
