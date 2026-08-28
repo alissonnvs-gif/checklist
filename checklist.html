@@ -483,6 +483,64 @@
 
   .formwrap { margin-top: 18px; }
 
+  /* ================= FACETAS (Rotina / Listas) ================= */
+
+  .facetarow { display: flex; justify-content: flex-end; margin: -16px 0 22px; }
+  .facetas { display: flex; gap: 3px; padding: 4px; border-radius: 999px; flex: none; }
+  .fc {
+    border: 0; background: transparent; font-family: inherit;
+    font-size: 0.68rem; font-weight: 500; color: var(--ink-2);
+    padding: 6px 13px; border-radius: 999px; cursor: pointer;
+  }
+  .fc[aria-pressed="true"] {
+    color: var(--ink);
+    background: linear-gradient(160deg, rgba(255,255,255,0.55), rgba(255,255,255,0.16));
+    box-shadow: inset 0 1.5px 1px var(--f-top), inset 0 0 0 1px var(--f-rim);
+  }
+
+  /* ================= LISTAS ================= */
+
+  /* As abas têm cor escolhida pelo usuário; as Listas não são uma aba, então
+     a cor é fixa — turquesa — declarada no mesmo formato (--c1/--c2/--c-ink)
+     para reaproveitar sem alteração as linhas, a lâmpada e o formulário. */
+  .faceta-listas { --c1: #5FE0C8; --c2: #2FB6C4; --c-ink: #0E7C86; }
+  :root[data-theme="noite"] .faceta-listas { --c-ink: #8AE8DC; }
+
+  .listcard {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 15px 15px 15px 17px; border-radius: 22px;
+    border: 0; text-align: left; cursor: pointer; font: inherit; color: var(--ink);
+    transition: transform 0.16s cubic-bezier(0.34,1.4,0.64,1);
+  }
+  .listcard:hover { transform: translateY(-1.5px); }
+  .listcard-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .listcard-name { font-size: 0.95rem; font-weight: 500; line-height: 1.25; word-break: break-word; }
+  .listcard-count { font-size: 0.68rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .listcard-chev { width: 17px; height: 17px; flex: none; color: var(--c-ink); transform: rotate(-90deg); }
+  .listcard-chev path { stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+
+  .listhead { display: flex; align-items: center; gap: 10px; margin: 0 2px 16px; }
+  .listtitle {
+    flex: 1; min-width: 0; border: 0; background: transparent; font-family: inherit;
+    font-size: 0.92rem; font-weight: 500; color: var(--ink); padding: 6px 2px;
+    border-bottom: 1.5px dashed color-mix(in srgb, var(--ink) 22%, transparent);
+    outline: none; border-radius: 0;
+  }
+  .listtitle:focus { border-bottom-style: solid; border-bottom-color: var(--c2); }
+  .listtitle:disabled { border-bottom-style: none; color: var(--ink); opacity: 1; }
+
+  /* A quantidade fica à direita, no lugar onde a tarefa mostra a hora: é a
+     mesma função na linha — o número que qualifica o item. Embaixo do nome
+     ela virava legenda e sumia. */
+  .item-qty {
+    font-size: 0.72rem; font-weight: 600; color: var(--c-ink);
+    flex: none; max-width: 33%; text-align: right; line-height: 1.25;
+  }
+
+  .fields-row { display: flex; gap: 9px; }
+  .fields-row .field-qty { flex: 0 0 104px; }
+  .fields-row .field-name { flex: 1; min-width: 0; }
+
   /* ================= TOAST ================= */
 
   .toast {
@@ -558,6 +616,13 @@
       </button>
     </div>
   </header>
+
+  <div class="facetarow" id="facetarow">
+    <div class="gl gl-clear facetas" role="group" aria-label="Seções do app">
+      <button class="fc" type="button" data-faceta="checklist">Rotina</button>
+      <button class="fc" type="button" data-faceta="listas">Listas</button>
+    </div>
+  </div>
 
   <h1 class="greet" id="greet"></h1>
   <p class="greet-sub" id="sub"></p>
@@ -666,6 +731,11 @@
   var OVERVIEW_ID = "overview";
   var OVERVIEW_DAYS = 7;
 
+  // Quantas listas cada pessoa pode ter ao mesmo tempo. O banco segura o
+  // mesmo número (supabase/05_listas.sql) — este aqui é só para avisar antes
+  // em vez de deixar o servidor recusar depois. Mudar um exige mudar o outro.
+  var LIMITE_LISTAS = 5;
+
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
   var DAY_LABEL = { 0: "Domingo", 1: "Segunda", 2: "Terça", 3: "Quarta", 4: "Quinta", 5: "Sexta", 6: "Sábado" };
@@ -748,8 +818,10 @@
   function defaultState() {
     var s = {
       activeTab: OVERVIEW_ID,
+      faceta: "checklist",
       viewingWeek: mondayOf(new Date()),
       seedVersion: SEED_VERSION,
+      lists: [],
       categories: DEFAULT_CATEGORIES.map(function (c) { return { id: c.id, label: c.label, palette: c.palette }; })
     };
     DEFAULT_CATEGORIES.forEach(function (cat) {
@@ -816,6 +888,27 @@
     if (!parsed.srv.cats) parsed.srv.cats = {};
     if (!parsed.srv.tasks) parsed.srv.tasks = {};
     if (!parsed.srv.checks) parsed.srv.checks = {};
+    if (!parsed.srv.lists) parsed.srv.lists = {};
+    if (!parsed.srv.items) parsed.srv.items = {};
+
+    // ---- listas ----
+    // canEdit fica gravado junto porque numa lista compartilhada quem manda é
+    // o servidor, não a tela: a lista de outra pessoa pode chegar aqui como
+    // "só olhar", e nesse caso os botões de mexer nem nascem.
+    if (!Array.isArray(parsed.lists)) parsed.lists = [];
+    parsed.lists.forEach(function (l) {
+      if (typeof l.title !== "string" || !l.title) l.title = "Nova lista";
+      if (l.canEdit === undefined) l.canEdit = true;
+      if (!l.createdAt) l.createdAt = Date.now();
+      if (!Array.isArray(l.items)) l.items = [];
+      l.items.forEach(function (it) {
+        if (typeof it.qty !== "string") it.qty = "";
+        if (typeof it.name !== "string") it.name = "";
+        it.done = !!it.done;
+        if (!it.createdAt) it.createdAt = Date.now();
+      });
+    });
+    if (parsed.faceta !== "listas") parsed.faceta = "checklist";
     delete parsed.syncMeta;
     delete parsed.syncKnownIds;
     if (!parsed.overviewSeen) { parsed.activeTab = OVERVIEW_ID; parsed.overviewSeen = true; }
@@ -965,6 +1058,9 @@
   var elOrbs = document.getElementById("orbs");
   var elAddRow = document.getElementById("addrow");
   var elGear = document.getElementById("gearbtn");
+  var elRodape = document.querySelector("footer.note");
+  var RODAPE_ROTINA = elRodape ? elRodape.textContent : "";
+  var RODAPE_LISTAS = "Suas listas ficam guardadas na conta e aparecem em qualquer aparelho onde você entrar.";
 
   elDate.textContent = today.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 
@@ -1894,6 +1990,18 @@
   function renderForm() {
     elFormSlot.innerHTML = "";
     elNewBtn.setAttribute("aria-expanded", String(formOpen));
+
+    if (state.faceta === "listas") {
+      var aberta = listaAberta ? listaDe(listaAberta) : null;
+      elNewLabel.textContent = aberta ? "Novo item" : "Nova lista";
+      // Numa lista compartilhada só de leitura não existe "adicionar".
+      if (aberta && !podeEditar(aberta)) { elAddRow.style.display = "none"; return; }
+      elAddRow.style.display = "";
+      if (!formOpen) return;
+      elFormSlot.appendChild(aberta ? formDoItem(aberta, null) : formNovaLista());
+      return;
+    }
+
     elNewLabel.textContent = state.activeTab === OVERVIEW_ID
       ? "Nova tarefa"
       : "Nova tarefa em " + catOf(state.activeTab).label;
@@ -1907,6 +2015,398 @@
   /* =========================================================
      RENDER
      ========================================================= */
+
+  /* =========================================================
+     LISTAS — a faceta nova
+
+     Mora em state.lists e usa o mesmo caminho de sincronismo das
+     tarefas: grava local na hora, sobe depois, e volta pelo tempo
+     real. Cada lista já carrega ownerId e canEdit porque a tela de
+     compartilhar vem a seguir — hoje toda lista é do próprio dono,
+     mas nada aqui precisa mudar quando o convidado existir.
+
+     Item marcado NÃO some nem muda de lugar, a pedido dele: fica
+     onde está, riscado, igual à tarefa concluída.
+     ========================================================= */
+
+  var listaAberta = null;    // id da lista aberta; null = tela com todas
+  var itemEditando = null;   // id do item cuja linha virou formulário
+  var listasOk = true;       // false quando o banco ainda não tem as tabelas
+
+  function listas() {
+    if (!Array.isArray(state.lists)) state.lists = [];
+    return state.lists;
+  }
+
+  function listaDe(id) {
+    return listas().filter(function (l) { return l.id === id; })[0] || null;
+  }
+
+  function podeEditar(l) { return !!l && l.canEdit !== false; }
+
+  function criarLista(nome) {
+    if (listas().length >= LIMITE_LISTAS) {
+      showToast("Você já tem " + LIMITE_LISTAS + " listas. Exclua uma pra criar outra.");
+      return null;
+    }
+    var l = {
+      id: "l" + uid(),
+      title: nome || "Nova lista",
+      ownerId: currentUser ? currentUser.id : null,
+      canEdit: true,
+      items: [],
+      createdAt: Date.now()
+    };
+    listas().push(l);
+    save();
+    return l;
+  }
+
+  function excluirLista(l) {
+    var i = listas().indexOf(l);
+    if (i >= 0) listas().splice(i, 1);
+    if (listaAberta === l.id) listaAberta = null;
+    itemEditando = null;
+    formOpen = false;
+    save();
+    render();
+    showToast("Lista excluída.");
+  }
+
+  function excluirItem(l, it) {
+    var i = l.items.indexOf(it);
+    if (i >= 0) l.items.splice(i, 1);
+    itemEditando = null;
+    save();
+    render();
+  }
+
+  // Dois toques para excluir, igual às tarefas: o primeiro arma o botão e
+  // avisa, o segundo executa. Sem caixa de confirmação no meio do caminho.
+  function armarExclusao(botao, rotulo, acao) {
+    var armado = false;
+    botao.addEventListener("click", function () {
+      if (!armado) {
+        armado = true;
+        botao.setAttribute("data-danger", "armed");
+        botao.setAttribute("aria-label", "Confirmar exclusão");
+        showToast("Toque de novo pra excluir.");
+        window.setTimeout(function () {
+          armado = false;
+          botao.removeAttribute("data-danger");
+          botao.setAttribute("aria-label", rotulo);
+        }, 2600);
+        return;
+      }
+      acao();
+    });
+  }
+
+  function renderListas() {
+    elBody.innerHTML = "";
+    var wrap = el("div", "faceta-listas");
+    var aberta = listaAberta ? listaDe(listaAberta) : null;
+    if (!aberta) listaAberta = null;
+    wrap.appendChild(aberta ? telaDaLista(aberta) : telaDeListas());
+    elBody.appendChild(wrap);
+  }
+
+  function telaDeListas() {
+    var box = el("div", "list");
+    if (!listas().length) {
+      box.appendChild(el("p", "empty",
+        "Nenhuma lista ainda. Crie a primeira no botão lá embaixo — mercado, farmácia, o que precisar."));
+      return box;
+    }
+    listas().forEach(function (l) {
+      box.appendChild(cardDaLista(l));
+    });
+    return box;
+  }
+
+  function cardDaLista(l) {
+    var card = el("button", "gl gl-clear listcard");
+    card.type = "button";
+
+    var body = el("span", "listcard-body");
+    body.appendChild(el("span", "listcard-name", l.title));
+
+    var total = l.items.length;
+    var feitos = l.items.filter(function (it) { return it.done; }).length;
+    var texto = !total
+      ? "Vazia"
+      : (feitos === total ? "Tudo comprado — " + total + (total === 1 ? " item" : " itens")
+                          : feitos + " de " + total + " comprados");
+    body.appendChild(el("span", "listcard-count", texto));
+    card.appendChild(body);
+
+    card.appendChild(svgPath(ICON_CHEV, "listcard-chev"));
+    card.addEventListener("click", function () {
+      listaAberta = l.id;
+      formOpen = false;
+      itemEditando = null;
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    return card;
+  }
+
+  function telaDaLista(l) {
+    var box = el("div");
+
+    /* --- cabeçalho: voltar, nome editável, excluir --- */
+    var head = el("div", "listhead");
+
+    var voltar = el("button", "wbtn");
+    voltar.type = "button";
+    voltar.setAttribute("aria-label", "Voltar para as listas");
+    voltar.appendChild(svgPath(ICON_PREV));
+    voltar.addEventListener("click", function () {
+      listaAberta = null;
+      formOpen = false;
+      itemEditando = null;
+      render();
+    });
+    head.appendChild(voltar);
+
+    var nome = el("input", "listtitle");
+    nome.type = "text";
+    nome.value = l.title;
+    nome.setAttribute("aria-label", "Nome da lista");
+    if (!podeEditar(l)) {
+      nome.disabled = true;
+    } else {
+      nome.addEventListener("input", function () {
+        l.title = nome.value.replace(/\s+/g, " ").trimStart();
+        save();
+      });
+      nome.addEventListener("blur", function () {
+        l.title = nome.value.replace(/\s+/g, " ").trim() || "Nova lista";
+        nome.value = l.title;
+        save();
+      });
+    }
+    head.appendChild(nome);
+
+    // Excluir a lista inteira é do dono, mesmo quando o convidado pode editar.
+    if (!currentUser || !l.ownerId || l.ownerId === currentUser.id) {
+      var apagar = el("button", "miniicon");
+      apagar.type = "button";
+      apagar.setAttribute("aria-label", "Excluir lista");
+      apagar.appendChild(svgPath(ICON_DEL));
+      armarExclusao(apagar, "Excluir lista", function () { excluirLista(l); });
+      head.appendChild(apagar);
+    }
+    box.appendChild(head);
+
+    /* --- itens --- */
+    if (!l.items.length) {
+      box.appendChild(el("p", "empty", "Lista vazia. Adicione o primeiro item lá embaixo."));
+      return box;
+    }
+
+    var faltam = l.items.filter(function (it) { return !it.done; }).length;
+    var sec = el("div", "sec-head");
+    sec.appendChild(el("span", "sec-name", "Itens"));
+    sec.appendChild(el("span", "sec-note",
+      faltam ? faltam + (faltam === 1 ? " a comprar" : " a comprar") : "tudo comprado"));
+    box.appendChild(sec);
+
+    var lista = el("div", "list");
+    l.items.forEach(function (it) { lista.appendChild(itemRow(l, it)); });
+    box.appendChild(lista);
+
+    if (podeEditar(l) && l.items.some(function (it) { return it.done; })) {
+      var limpar = el("button", "minibtn minibtn-ghost", "Desmarcar tudo");
+      limpar.type = "button";
+      limpar.style.marginTop = "16px";
+      limpar.addEventListener("click", function () {
+        l.items.forEach(function (it) { it.done = false; });
+        save();
+        render();
+        showToast("Lista pronta pra usar de novo.");
+      });
+      box.appendChild(limpar);
+    }
+
+    return box;
+  }
+
+  function itemRow(l, it) {
+    if (itemEditando === it.id) return formDoItem(l, it);
+
+    var row = el("div", "gl gl-clear task");
+    row.setAttribute("data-on", String(!!it.done));
+
+    var lamp = el("button", "lamp");
+    lamp.type = "button";
+    lamp.setAttribute("aria-label", it.done ? "Desmarcar item" : "Marcar como comprado");
+    lamp.appendChild(svgPath(ICON_TICK, "tick"));
+    if (!podeEditar(l)) {
+      lamp.disabled = true;
+      lamp.style.cursor = "default";
+    } else {
+      lamp.addEventListener("click", function () {
+        it.done = !it.done;
+        save();
+        render();
+      });
+    }
+    row.appendChild(lamp);
+
+    var body = el("span", "task-body");
+    body.appendChild(el("span", "task-title", it.name));
+    row.appendChild(body);
+    if (it.qty) row.appendChild(el("span", "item-qty", it.qty));
+
+    if (podeEditar(l)) {
+      var acts = el("div", "task-acts");
+
+      var edit = el("button", "iconbtn");
+      edit.type = "button";
+      edit.setAttribute("aria-label", "Editar item");
+      edit.appendChild(svgPath(ICON_EDIT));
+      edit.addEventListener("click", function () {
+        itemEditando = it.id;
+        formOpen = false;
+        render();
+      });
+      acts.appendChild(edit);
+
+      var del = el("button", "iconbtn");
+      del.type = "button";
+      del.setAttribute("aria-label", "Excluir item");
+      del.appendChild(svgPath(ICON_DEL));
+      armarExclusao(del, "Excluir item", function () { excluirItem(l, it); });
+      acts.appendChild(del);
+
+      row.appendChild(acts);
+    }
+
+    return row;
+  }
+
+  /* ---- formulários ---- */
+
+  function formNovaLista() {
+    var box = el("div", "formwrap faceta-listas");
+    var form = el("div", "gl gl-clear form");
+
+    var campo = el("div", "field");
+    campo.appendChild(el("span", "field-label", "Nome da lista"));
+    var inp = el("input", "inp");
+    inp.type = "text";
+    inp.placeholder = "Mercado, farmácia, presentes...";
+    campo.appendChild(inp);
+    form.appendChild(campo);
+
+    var acts = el("div", "form-acts");
+    var ok = el("button", "minibtn", "Criar lista");
+    ok.type = "button";
+    ok.addEventListener("click", function () {
+      var nova = criarLista(inp.value.replace(/\s+/g, " ").trim());
+      formOpen = false;
+      if (nova) listaAberta = nova.id;
+      render();
+    });
+    var cancela = el("button", "minibtn minibtn-ghost", "Cancelar");
+    cancela.type = "button";
+    cancela.addEventListener("click", function () { formOpen = false; render(); });
+    acts.appendChild(ok);
+    acts.appendChild(cancela);
+    form.appendChild(acts);
+
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); ok.click(); }
+    });
+
+    box.appendChild(form);
+    return box;
+  }
+
+  // Serve para criar (it = null) e para editar. No modo criar o formulário
+  // continua aberto depois de salvar: numa compra você lança vários itens
+  // seguidos, e fechar a cada um obrigaria a tocar no botão toda vez.
+  function formDoItem(l, it) {
+    var novo = !it;
+    // No modo criar o formulário nasce fora da tela das listas (no rodapé),
+    // então leva junto a classe que carrega a cor turquesa.
+    var box = el("div", novo ? "formwrap faceta-listas" : "");
+    var form = el("div", "gl gl-clear form");
+
+    var linha = el("div", "fields-row");
+
+    var fq = el("div", "field field-qty");
+    fq.appendChild(el("span", "field-label", "Quantidade"));
+    var inpQ = el("input", "inp");
+    inpQ.type = "text";
+    inpQ.placeholder = "2 kg";
+    inpQ.value = novo ? "" : (it.qty || "");
+    fq.appendChild(inpQ);
+
+    var fn = el("div", "field field-name");
+    fn.appendChild(el("span", "field-label", "Item"));
+    var inpN = el("input", "inp");
+    inpN.type = "text";
+    inpN.placeholder = "Arroz";
+    inpN.value = novo ? "" : (it.name || "");
+    fn.appendChild(inpN);
+
+    linha.appendChild(fq);
+    linha.appendChild(fn);
+    form.appendChild(linha);
+
+    function guardar() {
+      var nome = inpN.value.replace(/\s+/g, " ").trim();
+      var quanto = inpQ.value.replace(/\s+/g, " ").trim();
+      if (!nome) { inpN.focus(); return; }
+      if (novo) {
+        l.items.push({ id: "i" + uid(), qty: quanto, name: nome, done: false, createdAt: Date.now() });
+        save();
+        render();
+        // Redesenhou: o formulário é outro elemento. Pega o novo e continua.
+        var campos = elFormSlot.querySelectorAll(".inp");
+        if (campos.length) campos[0].focus();
+      } else {
+        it.qty = quanto;
+        it.name = nome;
+        itemEditando = null;
+        save();
+        render();
+      }
+    }
+
+    var acts = el("div", "form-acts");
+    var ok = el("button", "minibtn", novo ? "Adicionar" : "Salvar");
+    ok.type = "button";
+    ok.addEventListener("click", guardar);
+    acts.appendChild(ok);
+
+    var cancela = el("button", "minibtn minibtn-ghost", novo ? "Fechar" : "Cancelar");
+    cancela.type = "button";
+    cancela.addEventListener("click", function () {
+      if (novo) formOpen = false; else itemEditando = null;
+      render();
+    });
+    acts.appendChild(cancela);
+
+    if (!novo) {
+      var apagar = el("button", "minibtn minibtn-danger", "Excluir");
+      apagar.type = "button";
+      apagar.addEventListener("click", function () { excluirItem(l, it); });
+      acts.appendChild(apagar);
+    }
+    form.appendChild(acts);
+
+    [inpQ, inpN].forEach(function (campo2) {
+      campo2.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); guardar(); }
+      });
+    });
+
+    box.appendChild(form);
+    return box;
+  }
 
   /* =========================================================
      CONFIGURAÇÕES
@@ -2391,6 +2891,25 @@
   function render() {
     renderCatStyles();
     renderBg();
+    renderFacetas();
+    if (elRodape) {
+      elRodape.textContent = (!settingsOpen && state.faceta === "listas") ? RODAPE_LISTAS : RODAPE_ROTINA;
+    }
+
+    if (!settingsOpen && state.faceta === "listas") {
+      var aberta = listaAberta ? listaDe(listaAberta) : null;
+      elGreet.textContent = "Listas";
+      elSub.textContent = aberta
+        ? "Toque no nome pra renomear. O que for comprado fica riscado, não some."
+        : "Suas listas de compras e do que mais precisar — até " + LIMITE_LISTAS + " por enquanto.";
+      elProg.style.display = "none";
+      elCats.style.display = "none";
+      elWeekSlot.innerHTML = "";
+      elAddRow.style.display = "";
+      renderListas();
+      renderForm();
+      return;
+    }
 
     if (settingsOpen) {
       elGreet.textContent = "Configurações";
@@ -2449,6 +2968,42 @@
     });
   });
 
+  /* ---- troca de faceta (Rotina / Listas) ---- */
+
+  var elFacetaRow = document.getElementById("facetarow");
+
+  function renderFacetas() {
+    // A faceta some enquanto as configurações estão abertas: ali a pessoa está
+    // mexendo no app, não circulando por ele.
+    elFacetaRow.style.display = settingsOpen ? "none" : "";
+    [].slice.call(elFacetaRow.querySelectorAll(".fc")).forEach(function (b) {
+      var f = b.getAttribute("data-faceta");
+      b.setAttribute("aria-pressed", String(state.faceta === f));
+      // Sem as tabelas no banco, o botão Listas nem aparece — melhor não
+      // existir do que existir e abrir uma tela que não salva.
+      if (f === "listas") b.style.display = listasOk ? "" : "none";
+    });
+  }
+
+  [].slice.call(document.querySelectorAll(".fc")).forEach(function (b) {
+    b.addEventListener("click", function () {
+      var f = b.getAttribute("data-faceta");
+      if (state.faceta === f && !settingsOpen) return;
+      state.faceta = f;
+      settingsOpen = false;
+      elGear.setAttribute("aria-expanded", "false");
+      editingId = null;
+      editingKey = null;
+      formOpen = false;
+      draft = null;
+      itemEditando = null;
+      if (f === "checklist") listaAberta = null;
+      save();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
   elGear.addEventListener("click", function () {
     settingsOpen = !settingsOpen;
     editingId = null;
@@ -2469,7 +3024,8 @@
     } else {
       formOpen = true;
       editingId = null;
-      draft = makeDraft(null);
+      itemEditando = null;
+      draft = state.faceta === "listas" ? null : makeDraft(null);
     }
     renderForm();
     if (formOpen) {
@@ -2505,8 +3061,18 @@
 
   /* ---------- o que o servidor deveria ter, a partir do estado local ---------- */
 
+  // Erro de "essa tabela não existe" (o SQL das listas ainda não foi rodado)
+  // ou de schema desatualizado. Vale desligar as listas em silêncio: o resto
+  // do app não pode parar por causa de uma parte que ainda não subiu.
+  function tabelaFaltando(err) {
+    if (!err) return false;
+    var code = err.code || "";
+    if (code === "42P01" || code === "PGRST205" || code === "PGRST204") return true;
+    return /schema cache|does not exist|could not find/i.test(err.message || "");
+  }
+
   function desiredRows() {
-    var rows = { profile: null, cats: {}, tasks: {}, checks: {} };
+    var rows = { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {} };
     var n = state.notif || {};
     rows.profile = {
       display_name: state.userName || "",
@@ -2558,6 +3124,28 @@
       });
     });
 
+    // Listas. Só sobe o que esta conta pode gravar — numa lista compartilhada
+    // só de leitura o app não tenta escrever, e o banco também recusaria.
+    var meuId = currentUser ? currentUser.id : null;
+    listas().forEach(function (l, li) {
+      if (!podeEditar(l)) return;
+      rows.lists[l.id] = {
+        id: l.id,
+        owner_id: l.ownerId || meuId,
+        title: l.title || "Nova lista",
+        sort_order: li,
+        created_at: new Date(l.createdAt || Date.now()).toISOString()
+      };
+      (l.items || []).forEach(function (it, ii) {
+        rows.items[it.id] = {
+          id: it.id, list_id: l.id,
+          qty: it.qty || "", name: it.name || "", done: !!it.done,
+          sort_order: ii,
+          created_at: new Date(it.createdAt || Date.now()).toISOString()
+        };
+      });
+    });
+
     return rows;
   }
 
@@ -2576,17 +3164,19 @@
   // Registra que o servidor está em dia com o que temos aqui.
   function markServerClean() {
     var want = desiredRows();
-    var srv = { profile: fpOf(want.profile), cats: {}, tasks: {}, checks: {} };
+    var srv = { profile: fpOf(want.profile), cats: {}, tasks: {}, checks: {}, lists: {}, items: {} };
     Object.keys(want.cats).forEach(function (id) { srv.cats[id] = fpOf(want.cats[id]); });
     Object.keys(want.tasks).forEach(function (id) { srv.tasks[id] = fpOf(want.tasks[id]); });
     Object.keys(want.checks).forEach(function (k) { srv.checks[k] = 1; });
+    Object.keys(want.lists).forEach(function (id) { srv.lists[id] = fpOf(want.lists[id]); });
+    Object.keys(want.items).forEach(function (id) { srv.items[id] = fpOf(want.items[id]); });
     state.srv = srv;
     localDirty = false;
   }
 
   // Registra que o servidor não tem nada nosso — tudo precisa subir.
   function markServerEmpty() {
-    state.srv = { profile: null, cats: {}, tasks: {}, checks: {} };
+    state.srv = { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {} };
     localDirty = true;
   }
 
@@ -2694,6 +3284,69 @@
       fail(await sb.from("categories").delete().in("id", catGone));
       catGone.forEach(function (id) { delete srv.cats[id]; });
     }
+
+    if (!listasOk) return;
+
+    // 8. listas novas ou alteradas — UMA A UMA de propósito. O banco recusa a
+    //    sexta lista, e num lote eu não saberia qual foi recusada: o erro
+    //    derrubaria as outras junto.
+    var lids = Object.keys(want.lists);
+    for (var li = 0; li < lids.length; li++) {
+      var lid = lids[li];
+      var lfp = fpOf(want.lists[lid]);
+      if (srv.lists[lid] === lfp) continue;
+      var rl = await sb.from("lists").upsert(want.lists[lid]);
+      if (rl.error) {
+        if (tabelaFaltando(rl.error)) { listasOk = false; return; }
+        if (rl.error.code === "P0001") { recusarLista(lid, rl.error.message); continue; }
+        throw rl.error;
+      }
+      srv.lists[lid] = lfp;
+    }
+
+    // 9. itens novos ou alterados
+    var itPend = [];
+    Object.keys(want.items).forEach(function (id) {
+      var fp = fpOf(want.items[id]);
+      if (srv.items[id] !== fp) itPend.push([id, fp, want.items[id]]);
+    });
+    if (itPend.length) {
+      var ri = await sb.from("list_items").upsert(itPend.map(function (p) { return p[2]; }));
+      if (ri.error) {
+        if (tabelaFaltando(ri.error)) { listasOk = false; return; }
+        throw ri.error;
+      }
+      itPend.forEach(function (p) { srv.items[p[0]] = p[1]; });
+    }
+
+    // 10. itens removidos, e só então as listas removidas
+    var itGone = Object.keys(srv.items).filter(function (id) { return !want.items[id]; });
+    if (itGone.length) {
+      fail(await sb.from("list_items").delete().in("id", itGone));
+      itGone.forEach(function (id) { delete srv.items[id]; });
+    }
+
+    var listGone = Object.keys(srv.lists).filter(function (id) { return !want.lists[id]; });
+    if (listGone.length) {
+      fail(await sb.from("lists").delete().in("id", listGone));
+      listGone.forEach(function (id) { delete srv.lists[id]; });
+    }
+  }
+
+  // O banco recusou uma lista (limite estourado). Ela não existe lá, então não
+  // pode continuar existindo aqui fingindo que sim — sai da tela com aviso.
+  function recusarLista(lid, msg) {
+    var l = listaDe(lid);
+    if (l) {
+      (l.items || []).forEach(function (it) { delete state.srv.items[it.id]; });
+      var i = listas().indexOf(l);
+      if (i >= 0) listas().splice(i, 1);
+      if (listaAberta === lid) listaAberta = null;
+    }
+    delete state.srv.lists[lid];
+    persistQuiet();
+    showToast(msg || "O servidor não aceitou essa lista.");
+    render();
   }
 
   /* ---------- busca ---------- */
@@ -2708,11 +3361,39 @@
       sb.from("task_checks").select("task_id,week_monday,weekday")
     ]);
     res.forEach(function (r) { if (r.error) throw r.error; });
+
+    // As listas vêm numa busca separada de propósito: se o SQL delas ainda não
+    // foi rodado neste banco, o erro apaga só as listas em vez de derrubar a
+    // busca inteira e deixar o app sem sincronizar as tarefas.
+    var lists = null, items = null, shares = null;
+    if (listasOk) {
+      var ex = await Promise.all([
+        sb.from("lists").select("id,owner_id,title,sort_order,created_at"),
+        sb.from("list_items").select("id,list_id,qty,name,done,sort_order,created_at"),
+        sb.from("list_shares").select("list_id,user_id,can_edit")
+      ]);
+      var erro = ex[0].error || ex[1].error || ex[2].error;
+      if (erro) {
+        if (tabelaFaltando(erro)) listasOk = false;
+        else throw erro;
+      } else {
+        lists = ex[0].data || [];
+        items = ex[1].data || [];
+        shares = ex[2].data || [];
+      }
+    }
+
     return {
       profile: res[0].data || null,
       cats: res[1].data || [],
       tasks: res[2].data || [],
-      checks: res[3].data || []
+      checks: res[3].data || [],
+      // null aqui quer dizer "não deu para ler", que é diferente de "está
+      // vazio". Quem reconstrói o estado precisa dessa diferença para não
+      // apagar as listas locais por causa de uma falha de leitura.
+      lists: lists,
+      items: items,
+      shares: shares
     };
   }
 
@@ -2731,6 +3412,7 @@
       } : null,
       viewingWeek: (state && state.viewingWeek) || mondayOf(new Date()),
       activeTab: (state && state.activeTab) || OVERVIEW_ID,
+      faceta: (state && state.faceta) || "checklist",
       overviewSeen: true,
       seedVersion: SEED_VERSION,
       hardResetVersion: HARD_RESET_VERSION
@@ -2769,6 +3451,48 @@
       st[c.id].projects.sort(function (a, b) { return a.createdAt - b.createdAt; });
     });
 
+    // ---- listas ----
+    if (d.lists) {
+      // Só interessa o convite QUE É MEU: ele diz se posso mexer ou só olhar.
+      var meuConvite = {};
+      (d.shares || []).forEach(function (s) {
+        if (currentUser && s.user_id === currentUser.id) meuConvite[s.list_id] = !!s.can_edit;
+      });
+
+      var porLista = {};
+      st.lists = d.lists.slice().sort(function (a, b) {
+        return (a.sort_order - b.sort_order) ||
+               ((Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0));
+      }).map(function (r) {
+        var l = {
+          id: r.id,
+          title: r.title || "Nova lista",
+          ownerId: r.owner_id,
+          canEdit: !!(currentUser && r.owner_id === currentUser.id) || meuConvite[r.id] === true,
+          items: [],
+          createdAt: Date.parse(r.created_at) || Date.now()
+        };
+        porLista[r.id] = l;
+        return l;
+      });
+
+      (d.items || []).forEach(function (r) {
+        var l = porLista[r.list_id];
+        if (!l) return;   // item de lista que não veio junto: ignora, não quebra
+        l.items.push({
+          id: r.id, qty: r.qty || "", name: r.name || "",
+          done: !!r.done, createdAt: Date.parse(r.created_at) || Date.now()
+        });
+      });
+
+      st.lists.forEach(function (l) {
+        l.items.sort(function (a, b) { return a.createdAt - b.createdAt; });
+      });
+    } else {
+      // Não deu para ler as listas — mantém as que já estavam aqui.
+      st.lists = (state && Array.isArray(state.lists)) ? state.lists : [];
+    }
+
     return ensureShape(st);
   }
 
@@ -2786,7 +3510,7 @@
   var lastPullAt = 0;
 
   function pullBloqueado() {
-    return !currentUser || editingId || formOpen || settingsOpen || localDirty || pushing;
+    return !currentUser || editingId || itemEditando || formOpen || settingsOpen || localDirty || pushing;
   }
 
   function maybePull(force) {
@@ -2805,7 +3529,9 @@
       var igual = fpOf(want.profile) === anterior.srv.profile
         && sameFps(want.cats, anterior.srv.cats)
         && sameFps(want.tasks, anterior.srv.tasks)
-        && sameFps(want.checks, anterior.srv.checks, true);
+        && sameFps(want.checks, anterior.srv.checks, true)
+        && sameFps(want.lists, anterior.srv.lists || {})
+        && sameFps(want.items, anterior.srv.items || {});
       if (igual) { state = anterior; return; }
 
       markServerClean();
@@ -2863,6 +3589,16 @@
         { event: "*", schema: "public", table: tabela, filter: filtro },
         aoReceberAviso);
     });
+    // As listas escutam SEM filtro por dono. Numa lista compartilhada o item
+    // pertence à lista do outro, e um filtro por dono deixaria o convidado
+    // sem receber aviso nenhum. Quem separa o que cada um recebe é o RLS.
+    if (listasOk) {
+      ["lists", "list_items", "list_shares"].forEach(function (tabela) {
+        canalTempoReal.on("postgres_changes",
+          { event: "*", schema: "public", table: tabela },
+          aoReceberAviso);
+      });
+    }
     canalTempoReal.subscribe(function (estado, erro) {
       // Só afrouxa a busca periódica depois que o canal confirma que está no
       // ar. Se ele cair ou nunca subir, o app continua no ritmo de 1 minuto —
@@ -3107,7 +3843,9 @@
   }, { passive: true });
 
   swipeEl.addEventListener("touchend", function (e) {
-    if (tsX === null || tExcluded || settingsOpen) { tsX = null; return; }
+    // Deslizar troca de aba do checklist; nas Listas não existe aba para
+    // trocar, e o gesto ali só faria a tela pular sem motivo.
+    if (tsX === null || tExcluded || settingsOpen || state.faceta !== "checklist") { tsX = null; return; }
     var dx = e.changedTouches[0].clientX - tsX;
     var dy = e.changedTouches[0].clientY - tsY;
     tsX = null;
