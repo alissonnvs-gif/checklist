@@ -87,6 +87,12 @@ drop function if exists public.agenda_editavel(uuid);
 --     convite para CADA agenda daquele dono — hoje, no máximo uma.
 alter table public.agenda_shares rename to agenda_shares_antiga;
 
+-- Renomear a TABELA não renomeia os índices dela: os nomes antigos continuam
+-- ocupados no schema e derrubam a criação da tabela nova com
+-- "42P07: relation already exists". Por isso os índices vão junto.
+alter index if exists public.agenda_shares_user_idx rename to agenda_shares_antiga_user_idx;
+alter index if exists public.agenda_shares_pkey     rename to agenda_shares_antiga_pkey;
+
 create table public.agenda_shares (
   agenda_id  text        not null references public.agendas(id) on delete cascade,
   user_id    uuid        not null references auth.users(id) on delete cascade,
