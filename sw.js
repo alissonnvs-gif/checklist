@@ -1,6 +1,6 @@
 // Bump CACHE_VERSION whenever checklist.html (or any cached asset) changes,
 // so installed/offline copies pick up the update instead of serving stale files.
-var CACHE_VERSION = "v12";
+var CACHE_VERSION = "v13";
 var CACHE_NAME = "checklist-" + CACHE_VERSION;
 var ASSETS = [
   "./checklist.html",
