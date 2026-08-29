@@ -938,8 +938,9 @@
     delete parsed.agendasComigo;   // formato antigo, de quando a agenda era uma só
 
     if (!Array.isArray(parsed.agenda)) parsed.agenda = [];
-    // Atendimento sem agenda é lixo do formato antigo: não teria onde aparecer.
-    parsed.agenda = parsed.agenda.filter(function (a) { return a && a.agendaId; });
+    // Atendimento sem agenda vem do formato antigo, de quando a agenda era uma
+    // só. NÃO se apaga: quem adota esses órfãos é adotarOrfaos(), quando a
+    // primeira agenda existir. Apagar aqui perderia atendimento de verdade.
     parsed.agenda = parsed.agenda.filter(function (a) {
       return a && typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date);
     });
@@ -2618,8 +2619,24 @@
   // deixar usar.
   function garantirAgenda() {
     if (!currentUser || !agendaOk) return;
-    if (minhasAgendas().length) return;
-    criarAgenda("Atendimentos");
+    if (!minhasAgendas().length) criarAgenda("Agenda");
+    adotarOrfaos();
+  }
+
+  // Atendimento sem agenda existia antes de existirem várias agendas. Em vez
+  // de sumir, ele entra na primeira agenda própria — o dado é dele, e some
+  // seria a única saída que não tem volta.
+  function adotarOrfaos() {
+    var casa = minhasAgendas()[0];
+    if (!casa) return;
+    var mudou = false;
+    agenda().forEach(function (a) {
+      if (a.agendaId) return;
+      a.agendaId = casa.id;
+      a.ownerId = a.ownerId || meuId();
+      mudou = true;
+    });
+    if (mudou) save();
   }
 
   function rotuloDoDia(iso) {
@@ -4132,6 +4149,7 @@
   var pushTimer = null;
   var pushing = false;
   var pushQueued = false;
+  var falhasSeguidas = 0;
 
   function schedulePush() {
     if (!currentUser) return;
@@ -4146,10 +4164,18 @@
       await pushOnce();
       localDirty = false;
       persistQuiet();
+      falhasSeguidas = 0;
     } catch (e) {
       // Sem internet ou erro do servidor: a cópia local continua válida e o
       // que ficou pendente sobe na próxima tentativa. Nada se perde.
       persistQuiet();
+      falhasSeguidas++;
+      // Falhar calado foi o que deixou o problema invisível: o app parecia
+      // salvo e não estava. Avisa uma vez, sem ficar repetindo a cada tentativa.
+      if (falhasSeguidas === 3) {
+        console.warn("[checklist] envio falhando:", (e && e.message) || e);
+        showToast("Não estou conseguindo salvar no servidor. Seus dados estão seguros aqui no aparelho.");
+      }
     }
     pushing = false;
     if (pushQueued) { pushQueued = false; schedulePush(); }
@@ -4448,6 +4474,28 @@
     };
   }
 
+  /* ---------- a regra que impede a busca de apagar ----------
+
+     Uma leitura NUNCA pode apagar uma escrita que ainda não subiu. Sem isto,
+     bastava o envio falhar uma vez — internet ruim, um erro no meio, uma
+     tabela que ainda não existia — para a próxima busca voltar vazia e levar
+     junto o que a pessoa tinha acabado de criar. Foi assim que dado sumiu.
+
+     A pergunta que separa "nunca subiu" de "foi apagado de propósito" é o
+     registro srv: se o id está lá, o servidor já teve essa linha e não tem
+     mais — foi apagada, e apagada fica. Se não está, ela nunca chegou lá, e
+     quem manda é a cópia daqui. ---------- */
+  function preservarNaoEnviados(doServidor, locais, registroSrv) {
+    var vieram = {};
+    doServidor.forEach(function (x) { vieram[x.id] = true; });
+    (locais || []).forEach(function (x) {
+      if (!x || vieram[x.id]) return;
+      if (registroSrv && registroSrv[x.id]) return;   // o servidor já teve e apagou
+      doServidor.push(x);
+    });
+    return doServidor;
+  }
+
   // Reconstrói o formato que a tela usa a partir das linhas do banco.
   function stateFromServer(d) {
     var st = {
@@ -4537,7 +4585,18 @@
         });
       });
 
+      var srvAntes = (state && state.srv) || {};
+      var listasLocais = (state && Array.isArray(state.lists)) ? state.lists : [];
+
+      // Listas criadas aqui que o servidor ainda não confirmou continuam vivas.
+      preservarNaoEnviados(st.lists, listasLocais, srvAntes.lists);
+
+      // O mesmo item a item: uma lista que já subiu pode ter ganhado itens
+      // depois, e uma busca no meio do caminho os apagaria.
+      var itensLocais = {};
+      listasLocais.forEach(function (l) { itensLocais[l.id] = l.items || []; });
       st.lists.forEach(function (l) {
+        preservarNaoEnviados(l.items, itensLocais[l.id], srvAntes.items);
         l.items.sort(function (a, b) { return a.createdAt - b.createdAt; });
       });
     } else {
@@ -4569,6 +4628,13 @@
           createdAt: Date.parse(r.created_at) || Date.now()
         };
       });
+
+      // Agendas criadas aqui que ainda não subiram continuam vivas. As de
+      // outras pessoas não entram nesta conta: se sumiram da busca, foi o dono
+      // que tirou o acesso — e aí têm mesmo que sumir.
+      var minhasLocais = ((state && Array.isArray(state.agendas)) ? state.agendas : [])
+        .filter(function (g) { return !g.ownerId || (currentUser && g.ownerId === currentUser.id); });
+      preservarNaoEnviados(st.agendas, minhasLocais, (state && state.srv && state.srv.agendas));
     } else {
       st.agendas = (state && Array.isArray(state.agendas)) ? state.agendas : [];
     }
@@ -4588,6 +4654,23 @@
           createdAt: Date.parse(r.created_at) || Date.now()
         };
       });
+
+      // Atendimentos marcados aqui e ainda não enviados continuam vivos.
+      preservarNaoEnviados(
+        st.agenda,
+        (state && Array.isArray(state.agenda)) ? state.agenda : [],
+        (state && state.srv && state.srv.appts)
+      );
+
+      // Sobra: atendimento de uma agenda que não existe mais (o dono tirou o
+      // acesso, ou ela foi excluída). Não aparece em tela nem sobe para lugar
+      // nenhum — ficaria só ocupando espaço para sempre. Os sem agenda ficam:
+      // são os do formato antigo, e adotarOrfaos() cuida deles.
+      if (d.listaAgendas) {
+        var vivas = {};
+        st.agendas.forEach(function (g) { vivas[g.id] = true; });
+        st.agenda = st.agenda.filter(function (a) { return !a.agendaId || vivas[a.agendaId]; });
+      }
     } else {
       st.agenda = (state && Array.isArray(state.agenda)) ? state.agenda : [];
     }
