@@ -2511,6 +2511,7 @@
   var agendaOk = true;               // false quando o banco ainda não tem as tabelas
   var agendaSel = null;              // id da agenda aberta
   var agendaTela = "dia";            // "dia" ou "agendas"
+  var agendasLidas = false;          // o servidor ja disse quais agendas existem?
 
   function agenda() {
     if (!Array.isArray(state.agenda)) state.agenda = [];
@@ -2619,6 +2620,11 @@
   // deixar usar.
   function garantirAgenda() {
     if (!currentUser || !agendaOk) return;
+    // Só cria depois que o servidor disse quais agendas existem. Sem esta
+    // trava, abrir o app em dois aparelhos antes da primeira busca terminar
+    // criava uma agenda "Agenda" em cada um — e aí o seletor aparecia do nada,
+    // com duas agendas de mesmo nome.
+    if (!agendasLidas) return;
     if (!minhasAgendas().length) criarAgenda("Agenda");
     adotarOrfaos();
   }
@@ -4113,6 +4119,26 @@
 
   function fpOf(o) { return JSON.stringify(o); }
 
+  // O registro srv só conhece o que é MEU — é ele que decide o que eu envio.
+  // Tudo que chega por compartilhamento fica de fora dele por definição, e por
+  // isso precisa de uma assinatura própria para a busca saber que mudou.
+  function fpDoQueEhDosOutros(st) {
+    if (!st) return "";
+    var eu = currentUser ? currentUser.id : null;
+    function alheio(x) { return x && x.ownerId && x.ownerId !== eu; }
+    return JSON.stringify({
+      agendas: (st.agendas || []).filter(alheio)
+        .map(function (g) { return [g.id, g.title, g.canEdit, g.dono]; }),
+      listas: (st.lists || []).filter(alheio)
+        .map(function (l) {
+          return [l.id, l.title, l.canEdit,
+                  (l.items || []).map(function (i) { return [i.id, i.qty, i.name, i.done]; })];
+        }),
+      atendimentos: (st.agenda || []).filter(alheio)
+        .map(function (a) { return [a.id, a.agendaId, a.date, a.time, a.name, a.kind, a.note, a.done]; })
+    });
+  }
+
   function sameFps(want, have, direto) {
     var a = Object.keys(want), b = Object.keys(have);
     if (a.length !== b.length) return false;
@@ -4447,6 +4473,7 @@
         else throw erroAg;
       } else {
         listaAgendas = ea[0].data || [];
+        agendasLidas = true;
         appts = ea[1].data || [];
         // O NOME do dono vem por função separada: o RLS de profiles não deixa
         // ninguém ler o nome de outra pessoa, e está certo que não deixe. A
@@ -4716,7 +4743,12 @@
         && sameFps(want.lists, anterior.srv.lists || {})
         && sameFps(want.items, anterior.srv.items || {})
         && sameFps(want.appts, anterior.srv.appts || {})
-        && sameFps(want.agendas, anterior.srv.agendas || {});
+        && sameFps(want.agendas, anterior.srv.agendas || {})
+        // E o que é DOS OUTROS. Sem esta linha, uma agenda que alguém acabou
+        // de compartilhar não entrava na conta — o app concluía "nada mudou",
+        // descartava a busca inteira e a agenda compartilhada sumia da tela.
+        // Era o "tem hora que aparece, tem hora que não".
+        && fpDoQueEhDosOutros(state) === fpDoQueEhDosOutros(anterior);
       if (igual) { state = anterior; return; }
 
       markServerClean();
