@@ -800,7 +800,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v23";
+  var VERSAO_APP = "v24";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -3188,7 +3188,12 @@
       if (!r.data || r.data.ok !== true) showToast(textoErroConvite(r.data && r.data.erro));
       else conviteCodigo = r.data;
     } catch (e) {
-      showToast("Não deu para gerar agora. Confira a internet.");
+      // Mostra o motivo quando o servidor deu um. "Confira a internet" quando
+      // o problema é outro esconde o defeito e faz procurar no lugar errado —
+      // foi assim que um erro de SQL passou por falha de conexão.
+      console.error("[checklist] gerar convite:", e);
+      showToast(e && e.message ? "Não deu para gerar: " + e.message
+                               : "Não deu para gerar agora. Confira a internet.");
     }
     botao.disabled = false;
     render();
@@ -3224,7 +3229,9 @@
         maybePull(true);
       }
     } catch (e) {
-      showToast("Não deu para entrar agora. Confira a internet.");
+      console.error("[checklist] usar convite:", e);
+      showToast(e && e.message ? "Não deu para entrar: " + e.message
+                               : "Não deu para entrar agora. Confira a internet.");
     }
     botao.disabled = false;
     render();
