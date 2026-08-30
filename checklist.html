@@ -783,7 +783,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v16";
+  var VERSAO_APP = "v17";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -2736,9 +2736,11 @@
   }
 
   function seletorDeAgenda() {
-    // Com uma agenda só não há o que escolher, e um seletor de um botão só
-    // seria ruído no topo de toda tela.
-    if (agendas().length < 2) return null;
+    // Aparece SEMPRE que existe agenda, mesmo com uma só. Antes ele só nascia
+    // com duas ou mais — e do lado de quem usa isso era um seletor que "às
+    // vezes aparece e às vezes não", exatamente a queixa dele. Com uma agenda
+    // o botão único não é ruído: é a resposta para "qual agenda estou vendo".
+    if (!agendas().length) return null;
 
     var wrap = el("div", "gl gl-clear agendasel faceta-agenda");
     wrap.setAttribute("role", "group");
@@ -4299,6 +4301,22 @@
     }
     function fail(r) { if (r && r.error) throw r.error; return r; }
 
+    // O que EXISTE aqui, sem passar pelo filtro de permissão.
+    //
+    // As remoções lá embaixo têm que sair DESTA lista, e não de "want".
+    // "want" é o que eu POSSO enviar — ele exclui, por exemplo, atendimento
+    // de uma agenda que não está carregada neste instante. Se a remoção
+    // saísse de "want", bastava uma agenda faltar por um segundo para os
+    // atendimentos dela serem APAGADOS DO SERVIDOR para sempre, sem ninguém
+    // ter pedido. Só some do servidor o que a pessoa realmente apagou daqui.
+    var aqui = { lists: {}, items: {}, appts: {}, agendas: {} };
+    listas().forEach(function (l) {
+      aqui.lists[l.id] = true;
+      (l.items || []).forEach(function (it) { aqui.items[it.id] = true; });
+    });
+    agenda().forEach(function (a) { aqui.appts[a.id] = true; });
+    agendas().forEach(function (g) { aqui.agendas[g.id] = true; });
+
     // 1. perfil (nome e tema)
     var pfp = fpOf(want.profile);
     if (srv.profile !== pfp) {
@@ -4406,13 +4424,13 @@
     }
 
     // 10. itens removidos, e só então as listas removidas
-    var itGone = Object.keys(srv.items).filter(function (id) { return !want.items[id]; });
+    var itGone = Object.keys(srv.items).filter(function (id) { return !aqui.items[id]; });
     if (itGone.length) {
       fail(await sb.from("list_items").delete().in("id", itGone));
       itGone.forEach(function (id) { delete srv.items[id]; });
     }
 
-    var listGone = Object.keys(srv.lists).filter(function (id) { return !want.lists[id]; });
+    var listGone = Object.keys(srv.lists).filter(function (id) { return !aqui.lists[id]; });
     if (listGone.length) {
       fail(await sb.from("lists").delete().in("id", listGone));
       listGone.forEach(function (id) { delete srv.lists[id]; });
@@ -4455,13 +4473,13 @@
     }
 
     // 12. atendimentos removidos, e só então as agendas removidas
-    var apGone = Object.keys(srv.appts).filter(function (id) { return !want.appts[id]; });
+    var apGone = Object.keys(srv.appts).filter(function (id) { return !aqui.appts[id]; });
     if (apGone.length) {
       fail(await sb.from("appointments").delete().in("id", apGone));
       apGone.forEach(function (id) { delete srv.appts[id]; });
     }
 
-    var agGone = Object.keys(srv.agendas).filter(function (id) { return !want.agendas[id]; });
+    var agGone = Object.keys(srv.agendas).filter(function (id) { return !aqui.agendas[id]; });
     if (agGone.length) {
       fail(await sb.from("agendas").delete().in("id", agGone));
       agGone.forEach(function (id) { delete srv.agendas[id]; });
