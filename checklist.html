@@ -783,7 +783,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v17";
+  var VERSAO_APP = "v18";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -4228,19 +4228,46 @@
     return true;
   }
 
-  // Registra que o servidor está em dia com o que temos aqui.
-  function markServerClean() {
+  // Registra o que o servidor REALMENTE tem — não o que está na tela.
+  //
+  // A diferença é o defeito que fazia agenda e lista nova sumirem ao fechar e
+  // abrir. O estado da tela mistura duas coisas: o que veio do servidor e o
+  // que foi criado aqui e ainda não subiu (preservado por
+  // preservarNaoEnviados). Marcar tudo como "o servidor já tem" fazia o app
+  // parar de tentar enviar o que nunca chegou lá — e, na abertura seguinte,
+  // concluir que o servidor tinha apagado de propósito e jogar fora.
+  //
+  // Recebe a resposta da busca para saber quais linhas vieram MESMO de lá.
+  function markServerClean(d) {
     var want = desiredRows();
     var srv = { profile: fpOf(want.profile), cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {}, agendas: {} };
+
+    // Abas, tarefas e marcações não passam por preservação: seguem como antes.
     Object.keys(want.cats).forEach(function (id) { srv.cats[id] = fpOf(want.cats[id]); });
     Object.keys(want.tasks).forEach(function (id) { srv.tasks[id] = fpOf(want.tasks[id]); });
     Object.keys(want.checks).forEach(function (k) { srv.checks[k] = 1; });
-    Object.keys(want.lists).forEach(function (id) { srv.lists[id] = fpOf(want.lists[id]); });
-    Object.keys(want.items).forEach(function (id) { srv.items[id] = fpOf(want.items[id]); });
-    Object.keys(want.appts).forEach(function (id) { srv.appts[id] = fpOf(want.appts[id]); });
-    Object.keys(want.agendas).forEach(function (id) { srv.agendas[id] = fpOf(want.agendas[id]); });
+
+    var veio = { lists: {}, items: {}, appts: {}, agendas: {} };
+    if (d) {
+      (d.lists || []).forEach(function (x) { veio.lists[x.id] = true; });
+      (d.items || []).forEach(function (x) { veio.items[x.id] = true; });
+      (d.appts || []).forEach(function (x) { veio.appts[x.id] = true; });
+      (d.listaAgendas || []).forEach(function (x) { veio.agendas[x.id] = true; });
+    }
+
+    var faltaSubir = false;
+    ["lists", "items", "appts", "agendas"].forEach(function (grupo) {
+      Object.keys(want[grupo]).forEach(function (id) {
+        // Sem a resposta da busca em mãos, mantém o comportamento antigo.
+        if (!d || veio[grupo][id]) srv[grupo][id] = fpOf(want[grupo][id]);
+        else faltaSubir = true;
+      });
+    });
+
     state.srv = srv;
-    localDirty = false;
+    // O que ficou de fora precisa subir — e agora o app sabe disso.
+    localDirty = faltaSubir;
+    if (faltaSubir) schedulePush();
   }
 
   // Registra que o servidor não tem nada nosso — tudo precisa subir.
@@ -4846,7 +4873,7 @@
         && fpDoQueEhDosOutros(state) === fpDoQueEhDosOutros(anterior);
       if (igual) { state = anterior; return; }
 
-      markServerClean();
+      markServerClean(d);
       persistQuiet();
       applyTheme();
       render();
@@ -5073,7 +5100,7 @@
     if (servidor && servidor.tasks.length) {
       // A conta já tem conteúdo: o servidor é a verdade.
       state = stateFromServer(servidor);
-      markServerClean();
+      markServerClean(servidor);
     } else if (doAparelho) {
       // Conta sem tarefas e este navegador tinha um checklist de antes das
       // contas: ele sobe em vez de se perder. É a migração única.
@@ -5082,7 +5109,7 @@
     } else if (servidor && servidor.cats.length) {
       // Conta sem tarefas mas com abas já criadas noutro aparelho: aproveita.
       state = stateFromServer(servidor);
-      markServerClean();
+      markServerClean(servidor);
     } else if (!temLocal) {
       // Conta nova e aparelho sem nada: começa do zero, com as abas padrão.
       state = ensureShape(defaultState());
