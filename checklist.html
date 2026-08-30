@@ -783,7 +783,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v19";
+  var VERSAO_APP = "v20";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -941,6 +941,24 @@
     if (!parsed.srv.lists) parsed.srv.lists = {};
     if (!parsed.srv.items) parsed.srv.items = {};
     if (!parsed.srv.appts) parsed.srv.appts = {};
+
+    // ---- reparo único dos aparelhos que passaram pelas versões até a v18 ----
+    //
+    // Naquelas versões o app marcava como "o servidor já tem" coisa que nunca
+    // tinha subido. Corrigir a causa não desfaz o que ficou GRAVADO: o
+    // aparelho continua achando que já enviou e nunca mais tenta — foi assim
+    // que uma lista existia no celular e não existia no PC.
+    //
+    // Zerar o registro faz tudo ser reenviado. O que o servidor já tem é
+    // regravado por cima com o mesmo id, sem duplicar; e nada é apagado,
+    // porque a remoção só olha o que está no registro, que agora está vazio.
+    if (!parsed.reparoEnvio19) {
+      parsed.srv.lists = {};
+      parsed.srv.items = {};
+      parsed.srv.appts = {};
+      parsed.srv.agendas = {};
+      parsed.reparoEnvio19 = true;
+    }
 
     // ---- agenda ----
     // Sem data válida o atendimento não teria dia nenhum onde aparecer; some
