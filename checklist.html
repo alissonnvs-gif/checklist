@@ -783,7 +783,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v20";
+  var VERSAO_APP = "v21";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -4445,6 +4445,44 @@
     }
     function fail(r) { if (r && r.error) throw r.error; return r; }
 
+    /* ---- criar e alterar são chamadas diferentes ----
+
+       As tabelas antigas (categories, tasks) têm uma regra de segurança só,
+       valendo para tudo, e aceitam o comando "cria-ou-altera" numa tacada.
+       As novas (lists, agendas, appointments) têm regra separada por comando —
+       uma para criar, outra para alterar — e nelas o "cria-ou-altera" é
+       avaliado como alteração de uma linha que ainda não existe: o banco
+       recusa com violação de segurança.
+
+       Foi ISSO que impediu qualquer lista, agenda ou atendimento de nascer no
+       servidor. Aqui a criação e a alteração viram chamadas distintas, e o
+       "já existe" (23505) leva para a alteração. */
+
+    async function gravarLinha(tabela, linha, jaNoServidor) {
+      if (!jaNoServidor) {
+        var novo = await sb.from(tabela).insert(linha);
+        if (!novo.error) return novo;
+        if (novo.error.code !== "23505") return novo;   // erro de verdade
+        // 23505 = já está lá: segue para alterar
+      }
+      return await sb.from(tabela).update(linha).eq("id", linha.id);
+    }
+
+    // Em lote quando dá, uma a uma quando alguma já existe. Sem isto, a
+    // primeira sincronização de quem tem muita coisa viraria centenas de
+    // chamadas.
+    async function gravarLinhas(tabela, linhas) {
+      if (!linhas.length) return { error: null };
+      var lote = await sb.from(tabela).insert(linhas);
+      if (!lote.error) return lote;
+      if (lote.error.code !== "23505") return lote;
+      for (var i = 0; i < linhas.length; i++) {
+        var r = await gravarLinha(tabela, linhas[i], false);
+        if (r.error) return r;
+      }
+      return { error: null };
+    }
+
     // O que EXISTE aqui, sem passar pelo filtro de permissão.
     //
     // As remoções lá embaixo têm que sair DESTA lista, e não de "want".
@@ -4543,7 +4581,7 @@
       var lid = lids[li];
       var lfp = fpOf(want.lists[lid]);
       if (srv.lists[lid] === lfp) continue;
-      var rl = await sb.from("lists").upsert(want.lists[lid]);
+      var rl = await gravarLinha("lists", want.lists[lid], !!srv.lists[lid]);
       if (rl.error) {
         if (tabelaFaltando(rl.error)) { listasOk = false; return; }
         if (rl.error.code === "P0001") { recusarLista(lid, rl.error.message); continue; }
@@ -4559,7 +4597,7 @@
       if (srv.items[id] !== fp) itPend.push([id, fp, want.items[id]]);
     });
     if (itPend.length) {
-      var ri = await sb.from("list_items").upsert(itPend.map(function (p) { return p[2]; }));
+      var ri = await gravarLinhas("list_items", itPend.map(function (p) { return p[2]; }));
       if (ri.error) {
         if (tabelaFaltando(ri.error)) { listasOk = false; return; }
         throw ri.error;
@@ -4590,7 +4628,7 @@
       if (srv.agendas[id] !== fp) agPend.push([id, fp, want.agendas[id]]);
     });
     for (var gi = 0; gi < agPend.length; gi++) {
-      var rg = await sb.from("agendas").upsert(agPend[gi][2]);
+      var rg = await gravarLinha("agendas", agPend[gi][2], !!srv.agendas[agPend[gi][0]]);
       if (rg.error) {
         if (tabelaFaltando(rg.error)) { agendaOk = false; return; }
         // Teto de agendas estourado: tira a que o servidor recusou em vez de
@@ -4608,7 +4646,7 @@
       if (srv.appts[id] !== fp) apPend.push([id, fp, want.appts[id]]);
     });
     if (apPend.length) {
-      var ra = await sb.from("appointments").upsert(apPend.map(function (p) { return p[2]; }));
+      var ra = await gravarLinhas("appointments", apPend.map(function (p) { return p[2]; }));
       if (ra.error) {
         if (tabelaFaltando(ra.error)) { agendaOk = false; return; }
         throw ra.error;
