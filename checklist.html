@@ -492,11 +492,21 @@
     font-size: 0.68rem; font-weight: 500; color: var(--ink-2);
     padding: 6px 13px; border-radius: 999px; cursor: pointer;
   }
+  /* O botão da faceta aberta fica ACESO, não só um pouco mais claro: cada
+     seção tem sua cor, e a que está aberta se anuncia de longe. Antes o
+     destaque era um branco discreto que se confundia com o resto do vidro. */
   .fc[aria-pressed="true"] {
-    color: var(--ink);
-    background: linear-gradient(160deg, rgba(255,255,255,0.55), rgba(255,255,255,0.16));
-    box-shadow: inset 0 1.5px 1px var(--f-top), inset 0 0 0 1px var(--f-rim);
+    color: #fff;
+    background: linear-gradient(150deg, var(--fc1, var(--c1)), var(--fc2, var(--c2)));
+    box-shadow:
+      inset 0 1.5px 1px rgba(255,255,255,0.55), inset 0 0 0 1px var(--f-rim),
+      0 0 12px -2px var(--fc2, var(--c2));
   }
+  /* O seletor de agenda usa o mesmo botão, mas sem data-faceta: ele herda a
+     cor da própria seção (--c1/--c2 de .faceta-agenda) pelo fallback acima. */
+  .fc[data-faceta="checklist"] { --fc1: #63D9F5; --fc2: #7290FF; }
+  .fc[data-faceta="agenda"]    { --fc1: #8593FF; --fc2: #B87CFF; }
+  .fc[data-faceta="listas"]    { --fc1: #5FE0C8; --fc2: #2FB6C4; }
 
   /* ================= LISTAS E AGENDA ================= */
 
@@ -524,6 +534,14 @@
   .listcard-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .listcard-name { font-size: 0.95rem; font-weight: 500; line-height: 1.25; word-break: break-word; }
   .listcard-count { font-size: 0.68rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  /* Quanto falta comprar é a informação que ele procura no cartão — vem maior
+     e em negrito, na cor da seção, para achar sem ler a frase inteira. */
+  .listcard-falta {
+    font-size: 1.15rem; font-weight: 700; line-height: 1;
+    color: var(--c-ink); font-variant-numeric: tabular-nums;
+    margin-right: 3px;
+  }
+  .sec-note b { font-size: 1.05rem; font-weight: 700; color: var(--c-ink); }
   .listcard-chev { width: 17px; height: 17px; flex: none; color: var(--c-ink); transform: rotate(-90deg); }
   .listcard-chev path { stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
 
@@ -783,7 +801,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v21";
+  var VERSAO_APP = "v22";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -2302,15 +2320,23 @@
 
     var total = l.items.length;
     var feitos = l.items.filter(function (it) { return it.done; }).length;
-    var texto = !total
-      ? "Vazia"
-      : (feitos === total ? "Tudo comprado — " + total + (total === 1 ? " item" : " itens")
-                          : feitos + " de " + total + " comprados");
-    // Numa lista de outra pessoa, saber de quem é vale mais que a contagem.
+    var faltam = total - feitos;
+    var conta = el("span", "listcard-count");
+    // Numa lista de outra pessoa, de quem é vem antes da contagem.
     if (!listaMinha(l)) {
-      texto = "de " + (l.dono || "outra pessoa") + (l.canEdit ? "" : " · só olhar") + " · " + texto;
+      conta.appendChild(document.createTextNode(
+        "de " + (l.dono || "outra pessoa") + (l.canEdit ? "" : " · só olhar") + " · "));
     }
-    body.appendChild(el("span", "listcard-count", texto));
+    if (!total) {
+      conta.appendChild(document.createTextNode("Vazia"));
+    } else if (!faltam) {
+      conta.appendChild(document.createTextNode("Tudo comprado"));
+    } else {
+      conta.appendChild(el("b", "listcard-falta", String(faltam)));
+      conta.appendChild(document.createTextNode(
+        faltam === 1 ? "item a comprar" : "itens a comprar"));
+    }
+    body.appendChild(conta);
     card.appendChild(body);
 
     card.appendChild(svgPath(ICON_CHEV, "listcard-chev"));
@@ -2401,8 +2427,16 @@
     var faltam = l.items.filter(function (it) { return !it.done; }).length;
     var sec = el("div", "sec-head");
     sec.appendChild(el("span", "sec-name", "Itens"));
-    sec.appendChild(el("span", "sec-note",
-      faltam ? faltam + (faltam === 1 ? " a comprar" : " a comprar") : "tudo comprado"));
+    var nota = el("span", "sec-note");
+    if (faltam) {
+      var n = document.createElement("b");
+      n.textContent = String(faltam);
+      nota.appendChild(n);
+      nota.appendChild(document.createTextNode(" a comprar"));
+    } else {
+      nota.appendChild(document.createTextNode("tudo comprado"));
+    }
+    sec.appendChild(nota);
     box.appendChild(sec);
 
     var lista = el("div", "list");
@@ -3999,11 +4033,15 @@
       if (agendaTela === "agendas") {
         elSub.textContent = "Crie, renomeie e compartilhe suas agendas — ou entre na de outra pessoa.";
       } else {
+        // O título grande passa a ser o NOME da agenda aberta. Com várias
+        // agendas, "Agenda" não dizia qual — e é justamente isso que precisa
+        // estar claro antes de marcar alguém no dia errado.
         var g = agendaAtual();
+        if (g) elGreet.textContent = g.title;
         elSub.textContent = rotuloDoDia(agendaDia) +
           (g && !ehMinha(g)
-            ? " · " + g.title + " de " + (g.dono || "outra pessoa") + (g.canEdit ? "" : " (só olhar)")
-            : (agendas().length > 1 && g ? " · " + g.title : ""));
+            ? " · de " + (g.dono || "outra pessoa") + (g.canEdit ? "" : " (só olhar)")
+            : "");
       }
       elProg.style.display = "none";
       elCats.style.display = "none";
