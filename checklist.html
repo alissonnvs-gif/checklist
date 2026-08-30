@@ -562,6 +562,18 @@
   }
   .codigo-prazo { font-size: 0.74rem; color: var(--ink-2); text-align: center; margin: 8px 0 0; line-height: 1.4; }
 
+  /* Caixa de diagnóstico: existe para ele tirar print e me mandar quando algo
+     estiver estranho, sem precisar abrir ferramenta de programador. */
+  .diagbox {
+    margin: 12px 0 0; padding: 12px 13px; border-radius: 13px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.7rem; line-height: 1.5; color: var(--ink);
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 320px; overflow: auto;
+    background: linear-gradient(180deg, var(--well-a), var(--well-b));
+    box-shadow: inset 0 1.5px 3px var(--well-in);
+  }
+
   .fields-row { display: flex; gap: 9px; }
   .fields-row .field-qty { flex: 0 0 104px; }
   .fields-row .field-hora { flex: 0 0 122px; }
@@ -767,6 +779,11 @@
   // mesmo número em limite_de_agendas() no 09_agendas_multiplas.sql — mudar um
   // exige mudar o outro.
   var LIMITE_AGENDAS = 10;
+
+  // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
+  // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
+  // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
+  var VERSAO_APP = "v16";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -3602,8 +3619,68 @@
       b3.appendChild(cx);
     }
     wrap.appendChild(b3);
+    wrap.appendChild(blocoDiagnostico());
 
     elBody.appendChild(wrap);
+  }
+
+  /* ---- diagnóstico ----
+     Ele não é programador e não tem que brigar com o console do navegador para
+     me mostrar o que está acontecendo. Esta caixa responde, num print, as
+     perguntas que eu faria: o que existe no aparelho, em que agenda cada
+     atendimento está, e o que já subiu para o servidor. ---- */
+
+  function blocoDiagnostico() {
+    var b = el("section", "gl gl-clear set-block");
+    b.appendChild(el("h2", "set-title", "Diagnóstico"));
+    b.appendChild(el("p", "set-help",
+      "Se algo estiver estranho, tire um print daqui e me mande. " +
+      "Só aparece coisa sua — nada de outra pessoa."));
+
+    var srv = state.srv || {};
+    var L = [];
+    L.push("app " + VERSAO_APP);
+    L.push("");
+
+    L.push("AGENDAS (" + agendas().length + ")");
+    if (!agendas().length) L.push("  (nenhuma)");
+    agendas().forEach(function (g) {
+      // "enviada" só faz sentido para as minhas: a agenda de outra pessoa eu
+      // nunca envio, então dizer que não foi enviada seria mentira com cara
+      // de defeito.
+      L.push("  " + g.title +
+        "  [" + String(g.id).slice(0, 7) + "]" +
+        "  " + (ehMinha(g)
+          ? "minha  " + ((srv.agendas || {})[g.id] ? "enviada" : "NAO ENVIADA")
+          : "de " + (g.dono || "?") + "  " + (g.canEdit ? "posso editar" : "so olhar")));
+    });
+    L.push("");
+
+    L.push("ATENDIMENTOS (" + agenda().length + ")");
+    if (!agenda().length) L.push("  (nenhum)");
+    agenda().forEach(function (a) {
+      var g = agendaDe(a.agendaId);
+      L.push("  " + (a.name || "?") + "  ->  " +
+        (g ? g.title : "SEM AGENDA (" + (a.agendaId || "vazio") + ")") +
+        "  " + ((srv.appts || {})[a.id] ? "enviado" : "NAO ENVIADO"));
+    });
+    L.push("");
+
+    L.push("LISTAS (" + listas().length + ")");
+    listas().forEach(function (l) {
+      L.push("  " + l.title + "  " + l.items.length + " itens  " +
+        ((srv.lists || {})[l.id] ? "enviada" : "NAO ENVIADA"));
+    });
+    L.push("");
+
+    L.push("SINCRONISMO");
+    L.push("  falta enviar algo: " + (localDirty ? "SIM" : "nao"));
+    L.push("  falhas seguidas:   " + falhasSeguidas);
+    L.push("  agendas lidas do servidor: " + (agendasLidas ? "sim" : "NAO"));
+    L.push("  agenda no ar: " + (agendaOk ? "sim" : "NAO") + "   listas no ar: " + (listasOk ? "sim" : "NAO"));
+
+    b.appendChild(el("pre", "diagbox", L.join("\n")));
+    return b;
   }
 
   function catSettingRow(c, idx) {

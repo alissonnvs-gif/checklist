@@ -1,6 +1,6 @@
 // Bump CACHE_VERSION whenever checklist.html (or any cached asset) changes,
 // so installed/offline copies pick up the update instead of serving stale files.
-var CACHE_VERSION = "v15";
+var CACHE_VERSION = "v16";
 var CACHE_NAME = "checklist-" + CACHE_VERSION;
 var ASSETS = [
   "./checklist.html",
@@ -34,6 +34,11 @@ self.addEventListener("activate", function (event) {
 
 self.addEventListener("fetch", function (event) {
   if (event.request.method !== "GET") return;
+
+  // Só http(s) entra no cache. Extensão do navegador tem esquema próprio
+  // (chrome-extension:) e o cache recusa — virava erro vermelho no console
+  // sem nada a ver com o app.
+  if (!/^https?:$/.test(new URL(event.request.url).protocol)) return;
 
   // As chamadas ao Supabase NUNCA passam pelo cache. Se a rede cair, a queda
   // precisa ser uma queda — servir uma resposta antiga como se fosse atual
