@@ -783,7 +783,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v18";
+  var VERSAO_APP = "v19";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -2128,6 +2128,7 @@
      ========================================================= */
 
   var listaAberta = null;    // id da lista aberta; null = tela com todas
+  var entrandoComNumero = false;  // campo "entrar com um número" aberto
   var itemEditando = null;   // id do item cuja linha virou formulário
   var listasOk = true;       // false quando o banco ainda não tem as tabelas
 
@@ -2141,6 +2142,11 @@
   }
 
   function podeEditar(l) { return !!l && l.canEdit !== false; }
+
+  // Lista sem dono é lista criada aqui e ainda não enviada — é minha.
+  function listaMinha(l) {
+    return !!l && (!l.ownerId || !currentUser || l.ownerId === currentUser.id);
+  }
 
   function criarLista(nome) {
     if (listas().length >= LIMITE_LISTAS) {
@@ -2219,7 +2225,54 @@
     listas().forEach(function (l) {
       box.appendChild(cardDaLista(l));
     });
+    box.appendChild(blocoEntrarComNumero());
     return box;
+  }
+
+  // O mesmo campo serve para lista e para agenda. Fica aqui e também na tela
+  // das agendas, porque quem só usa listas não tem por que passar pela Agenda
+  // para digitar um número que é de uma lista.
+  function blocoEntrarComNumero() {
+    var caixa = el("div");
+    caixa.style.marginTop = "18px";
+
+    var abrir = el("button", "minibtn minibtn-ghost", "Entrar com um número");
+    abrir.type = "button";
+    abrir.addEventListener("click", function () {
+      entrandoComNumero = !entrandoComNumero;
+      render();
+    });
+    caixa.appendChild(abrir);
+
+    if (!entrandoComNumero) return caixa;
+
+    var form = el("div", "gl gl-clear form");
+    form.style.marginTop = "12px";
+    form.appendChild(el("span", "field-label",
+      "Recebeu um número de alguém? Serve para lista e para agenda."));
+    var inp = el("input", "inp");
+    inp.type = "text";
+    inp.inputMode = "numeric";
+    inp.maxLength = 6;
+    inp.placeholder = "000000";
+    inp.autocomplete = "off";
+    form.appendChild(inp);
+    var acts = el("div", "form-acts");
+    var entrar = el("button", "minibtn", "Entrar");
+    entrar.type = "button";
+    entrar.addEventListener("click", function () { usarConvite(inp.value, entrar); });
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); entrar.click(); }
+    });
+    acts.appendChild(entrar);
+    var fechar = el("button", "minibtn minibtn-ghost", "Cancelar");
+    fechar.type = "button";
+    fechar.addEventListener("click", function () { entrandoComNumero = false; render(); });
+    acts.appendChild(fechar);
+    form.appendChild(acts);
+    caixa.appendChild(form);
+
+    return caixa;
   }
 
   function cardDaLista(l) {
@@ -2235,6 +2288,10 @@
       ? "Vazia"
       : (feitos === total ? "Tudo comprado — " + total + (total === 1 ? " item" : " itens")
                           : feitos + " de " + total + " comprados");
+    // Numa lista de outra pessoa, saber de quem é vale mais que a contagem.
+    if (!listaMinha(l)) {
+      texto = "de " + (l.dono || "outra pessoa") + (l.canEdit ? "" : " · só olhar") + " · " + texto;
+    }
     body.appendChild(el("span", "listcard-count", texto));
     card.appendChild(body);
 
@@ -2286,8 +2343,22 @@
     }
     head.appendChild(nome);
 
-    // Excluir a lista inteira é do dono, mesmo quando o convidado pode editar.
-    if (!currentUser || !l.ownerId || l.ownerId === currentUser.id) {
+    // Compartilhar e excluir são do dono, mesmo quando o convidado pode editar.
+    if (listaMinha(l)) {
+      var comp = el("button", "miniicon");
+      comp.type = "button";
+      comp.setAttribute("aria-label", "Compartilhar " + l.title);
+      comp.appendChild(svgPath(ICON_COMPARTILHAR));
+      comp.addEventListener("click", function () {
+        if (compartilhando === l.id) { compartilhando = null; render(); return; }
+        compartilhando = l.id;
+        conviteCodigo = null;
+        convidados = null;
+        render();
+        carregarConvidadosLista(l.id);
+      });
+      head.appendChild(comp);
+
       var apagar = el("button", "miniicon");
       apagar.type = "button";
       apagar.setAttribute("aria-label", "Excluir lista");
@@ -2296,6 +2367,12 @@
       head.appendChild(apagar);
     }
     box.appendChild(head);
+
+    if (!listaMinha(l)) {
+      box.appendChild(el("p", "empty",
+        "Lista de " + (l.dono || "outra pessoa") + (l.canEdit ? "" : " — você só pode olhar") + "."));
+    }
+    if (compartilhando === l.id) box.appendChild(blocoConvite("lista", l.id, l.title));
 
     /* --- itens --- */
     if (!l.items.length) {
@@ -3036,21 +3113,25 @@
     return "Não deu certo. Tente de novo.";
   }
 
-  async function carregarConvidados(agendaId) {
+  async function carregarConvidados(tipo, alvoId) {
     if (!currentUser) { convidados = []; return; }
     try {
-      var r = await sb.rpc("convidados_da_agenda", { agenda: agendaId });
+      var r = tipo === "lista"
+        ? await sb.rpc("convidados_da_lista", { lista: alvoId })
+        : await sb.rpc("convidados_da_agenda", { agenda: alvoId });
       convidados = r.error ? [] : (r.data || []);
     } catch (e) { convidados = []; }
-    if (state.faceta === "agenda" && agendaTela === "agendas") render();
+    render();
   }
 
-  async function gerarConvite(agendaId, botao) {
+  function carregarConvidadosLista(id) { return carregarConvidados("lista", id); }
+
+  async function gerarConvite(tipo, alvoId, botao) {
     if (!currentUser) return;
     botao.disabled = true;
     try {
-      var r = await sb.rpc("criar_convite_agenda", {
-        agenda: agendaId, pode_editar: convitePermissao === "editar"
+      var r = await sb.rpc("criar_convite", {
+        tipo: tipo, alvo: alvoId, pode_editar: convitePermissao === "editar"
       });
       if (r.error) throw r.error;
       if (!r.data || r.data.ok !== true) showToast(textoErroConvite(r.data && r.data.erro));
@@ -3062,20 +3143,33 @@
     render();
   }
 
+  // Um número só serve para lista e para agenda. Quem recebe seis dígitos não
+  // sabe — e não tem que saber — de que eles são: o servidor descobre.
   async function usarConvite(valor, botao) {
     var codigo = (valor || "").replace(/\D/g, "");
     if (codigo.length !== 6) { showToast("O número tem 6 dígitos."); return; }
     botao.disabled = true;
     try {
-      var r = await sb.rpc("usar_convite_agenda", { codigo: codigo });
+      var r = await sb.rpc("usar_convite", { codigo: codigo });
+      // Banco ainda sem o SQL novo: cai no caminho antigo, que só sabe de
+      // agenda. Assim o convite da agenda, que já funcionava, não regride.
+      if (r.error && tabelaFaltando(r.error)) {
+        r = await sb.rpc("usar_convite_agenda", { codigo: codigo });
+        if (r.data && r.data.ok === true) r.data.tipo = "agenda";
+      }
       if (r.error) throw r.error;
       if (!r.data || r.data.ok !== true) {
         showToast(textoErroConvite(r.data && r.data.erro));
       } else {
-        showToast("Pronto. " + (r.data.agenda || "A agenda") + " apareceu no seletor lá em cima.");
-        agendaTela = "dia";
-        // A agenda nova só existe aqui depois de buscar: o convite mudou o
-        // banco, não a cópia local.
+        var ehLista = r.data.tipo === "lista";
+        showToast("Pronto. " + (r.data.nome || (ehLista ? "A lista" : "A agenda")) +
+          (ehLista ? " apareceu nas suas listas." : " apareceu no seletor lá em cima."));
+        // Leva pra onde a coisa apareceu, senão ele fica olhando a tela errada.
+        if (ehLista) { state.faceta = "listas"; listaAberta = null; }
+        else { state.faceta = "agenda"; agendaTela = "dia"; }
+        compartilhando = null;
+        // Só existe aqui depois de buscar: o convite mudou o banco, não a
+        // cópia local.
         maybePull(true);
       }
     } catch (e) {
@@ -3085,16 +3179,17 @@
     render();
   }
 
-  async function tirarAcesso(agendaId, c) {
+  async function tirarAcesso(tipo, alvoId, c) {
     try {
-      var r = await sb.from("agenda_shares").delete()
-        .eq("agenda_id", agendaId).eq("user_id", c.user_id);
+      var r = tipo === "lista"
+        ? await sb.from("list_shares").delete().eq("list_id", alvoId).eq("user_id", c.user_id)
+        : await sb.from("agenda_shares").delete().eq("agenda_id", alvoId).eq("user_id", c.user_id);
       if (r.error) throw r.error;
       showToast("Acesso removido.");
     } catch (e) {
       showToast("Não deu para remover agora.");
     }
-    carregarConvidados(agendaId);
+    carregarConvidados(tipo, alvoId);
   }
 
   async function sairDaAgenda(g) {
@@ -3138,7 +3233,7 @@
 
     minhasAgendas().forEach(function (g) {
       b1.appendChild(linhaDaAgenda(g));
-      if (compartilhando === g.id) b1.appendChild(blocoConvite(g));
+      if (compartilhando === g.id) b1.appendChild(blocoConvite("agenda", g.id, g.title));
     });
 
     var nova = el("button", "minibtn", "Nova agenda");
@@ -3181,9 +3276,10 @@
 
     /* --- entrar com um número --- */
     var b3 = el("section", "gl gl-clear set-block");
-    b3.appendChild(el("h2", "set-title", "Entrar numa agenda"));
+    b3.appendChild(el("h2", "set-title", "Entrar com um número"));
     b3.appendChild(el("p", "set-help",
-      "Recebeu um número de alguém? Digite aqui pra ver a agenda dessa pessoa."));
+      "Recebeu um número de alguém? Digite aqui. Serve tanto para agenda quanto " +
+      "para lista — o app descobre sozinho o que é."));
     var inp = el("input", "inp");
     inp.type = "text";
     inp.inputMode = "numeric";
@@ -3234,7 +3330,7 @@
       conviteCodigo = null;
       convidados = null;
       render();
-      carregarConvidados(g.id);
+      carregarConvidados("agenda", g.id);
     });
     acts.appendChild(comp);
 
@@ -3256,13 +3352,15 @@
     return linha;
   }
 
-  function blocoConvite(g) {
+  // Serve para agenda e para lista: o que muda é só o texto.
+  function blocoConvite(tipo, alvoId, nomeDoAlvo) {
+    var ehLista = tipo === "lista";
     var caixa = el("div", "danger-box");
 
     caixa.appendChild(el("span", "danger-msg",
       "Gere um número de 6 dígitos e passe pra pessoa. Ela digita esse número no " +
-      "app dela, em Agenda → Minhas agendas → Entrar numa agenda. O número vale " +
-      "só para “" + g.title + "”, serve uma vez só e dura 30 minutos."));
+      "app dela, em " + (ehLista ? "Listas" : "Agenda") + " → Entrar com um número. " +
+      "O número vale só para “" + nomeDoAlvo + "”, serve uma vez só e dura 30 minutos."));
 
     var picks = el("div", "picks");
     [["ver", "Só olhar"], ["editar", "Pode editar"]].forEach(function (p) {
@@ -3283,14 +3381,15 @@
 
     var gerar = el("button", "minibtn", conviteCodigo ? "Gerar outro número" : "Gerar número");
     gerar.type = "button";
-    gerar.addEventListener("click", function () { gerarConvite(g.id, gerar); });
+    gerar.addEventListener("click", function () { gerarConvite(tipo, alvoId, gerar); });
     caixa.appendChild(gerar);
 
     if (conviteCodigo) {
       caixa.appendChild(el("div", "codigao", conviteCodigo.codigo));
       caixa.appendChild(el("p", "codigo-prazo",
         (conviteCodigo.pode_editar
-          ? "Quem entrar com este número vai poder marcar e mexer nesta agenda."
+          ? (ehLista ? "Quem entrar com este número vai poder mexer nesta lista."
+                     : "Quem entrar com este número vai poder marcar e mexer nesta agenda.")
           : "Quem entrar com este número só vai poder olhar.") +
         " Vale 30 minutos e serve uma vez só — gerar outro apaga este."));
     }
@@ -3299,7 +3398,7 @@
     if (convidados === null) {
       caixa.appendChild(el("span", "danger-msg", "Verificando…"));
     } else if (!convidados.length) {
-      caixa.appendChild(el("span", "danger-msg", "Ninguém ainda. Esta agenda é só sua."));
+      caixa.appendChild(el("span", "danger-msg", "Ninguém ainda. " + (ehLista ? "Esta lista" : "Esta agenda") + " é só sua."));
     } else {
       convidados.forEach(function (c) {
         var linha = el("div", "catrow");
@@ -3311,7 +3410,7 @@
         tirar.type = "button";
         tirar.setAttribute("aria-label", "Tirar o acesso de " + c.nome);
         tirar.appendChild(svgPath(ICON_DEL));
-        armarExclusao(tirar, "Tirar o acesso de " + c.nome, function () { tirarAcesso(g.id, c); });
+        armarExclusao(tirar, "Tirar o acesso de " + c.nome, function () { tirarAcesso(tipo, alvoId, c); });
         linha.appendChild(tirar);
         caixa.appendChild(linha);
       });
@@ -4563,7 +4662,7 @@
     // As listas vêm numa busca separada de propósito: se o SQL delas ainda não
     // foi rodado neste banco, o erro apaga só as listas em vez de derrubar a
     // busca inteira e deixar o app sem sincronizar as tarefas.
-    var lists = null, items = null, shares = null;
+    var lists = null, items = null, shares = null, listasComigo = null;
     if (listasOk) {
       var ex = await Promise.all([
         sb.from("lists").select("id,owner_id,title,sort_order,created_at"),
@@ -4578,6 +4677,10 @@
         lists = ex[0].data || [];
         items = ex[1].data || [];
         shares = ex[2].data || [];
+        // O NOME de quem compartilhou a lista, pelo mesmo motivo da agenda: o
+        // RLS de profiles não deixa ler o nome de outra pessoa, e está certo.
+        var rl = await sb.rpc("listas_comigo");
+        if (!rl.error) listasComigo = rl.data || [];
       }
     }
 
@@ -4619,7 +4722,8 @@
       // apagar as listas locais por causa de uma falha de leitura.
       lists: lists,
       items: items,
-      shares: shares
+      shares: shares,
+      listasComigo: listasComigo
     };
   }
 
@@ -4708,16 +4812,22 @@
         if (currentUser && s.user_id === currentUser.id) meuConvite[s.list_id] = !!s.can_edit;
       });
 
+      // Nome do dono, para a lista compartilhada dizer de quem ela é.
+      var donoDaLista = {};
+      (d.listasComigo || []).forEach(function (r) { donoDaLista[r.list_id] = r.dono || "Sem nome"; });
+
       var porLista = {};
       st.lists = d.lists.slice().sort(function (a, b) {
         return (a.sort_order - b.sort_order) ||
                ((Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0));
       }).map(function (r) {
+        var minha = !!(currentUser && r.owner_id === currentUser.id);
         var l = {
           id: r.id,
           title: r.title || "Nova lista",
           ownerId: r.owner_id,
-          canEdit: !!(currentUser && r.owner_id === currentUser.id) || meuConvite[r.id] === true,
+          canEdit: minha || meuConvite[r.id] === true,
+          dono: minha ? null : (donoDaLista[r.id] || null),
           items: [],
           createdAt: Date.parse(r.created_at) || Date.now()
         };
