@@ -534,14 +534,10 @@
   .listcard-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .listcard-name { font-size: 0.95rem; font-weight: 500; line-height: 1.25; word-break: break-word; }
   .listcard-count { font-size: 0.68rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-  /* Quanto falta comprar é a informação que ele procura no cartão — vem maior
-     e em negrito, na cor da seção, para achar sem ler a frase inteira. */
-  .listcard-falta {
-    font-size: 1.15rem; font-weight: 700; line-height: 1;
-    color: var(--c-ink); font-variant-numeric: tabular-nums;
-    margin-right: 3px;
-  }
-  .sec-note b { font-size: 1.05rem; font-weight: 700; color: var(--c-ink); }
+  /* O contador fica no tamanho do resto: quem grita na tela é a quantidade do
+     item, não quantos faltam. */
+  .listcard-falta { font-weight: 600; color: var(--c-ink); margin-right: 3px; }
+  .sec-note b { font-weight: 600; color: var(--c-ink); }
   .listcard-chev { width: 17px; height: 17px; flex: none; color: var(--c-ink); transform: rotate(-90deg); }
   .listcard-chev path { stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
 
@@ -558,9 +554,12 @@
   /* A quantidade fica à direita, no lugar onde a tarefa mostra a hora: é a
      mesma função na linha — o número que qualifica o item. Embaixo do nome
      ela virava legenda e sumia. */
+  /* A quantidade é o que ele lê de relance dentro do mercado, com o carrinho
+     na mão: vem grande e em negrito, e não em legenda. */
   .item-qty {
-    font-size: 0.72rem; font-weight: 600; color: var(--c-ink);
-    flex: none; max-width: 33%; text-align: right; line-height: 1.25;
+    font-size: 1.15rem; font-weight: 700; color: var(--c-ink);
+    flex: none; max-width: 38%; text-align: right; line-height: 1.2;
+    font-variant-numeric: tabular-nums;
   }
 
   /* Seletor de agenda: só aparece pra quem tem agenda de outra pessoa. */
@@ -801,7 +800,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v22";
+  var VERSAO_APP = "v23";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
