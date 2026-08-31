@@ -598,7 +598,7 @@
   .atend-hora {
     font-size: 1.15rem; font-weight: 700; color: var(--c-ink);
     flex: none; line-height: 1.2; font-variant-numeric: tabular-nums;
-    min-width: 3.4em;
+    min-width: 3em;
   }
   .atend-sem-hora { font-size: 0.7rem; font-weight: 600; color: var(--ink-2); }
 
@@ -634,10 +634,19 @@
 
   /* O corpo do atendimento vira botão: tocar abre o que foi preenchido. */
   .atend-abrir {
-    flex: 1; min-width: 0; border: 0; background: transparent; padding: 0;
+    flex: 1 1 7.5em; min-width: 0; border: 0; background: transparent; padding: 0;
     font: inherit; color: inherit; text-align: left; cursor: pointer;
     display: flex; flex-direction: column; gap: 3px;
   }
+
+  /* Confirmar, editar e excluir andam juntos: no celular eles descem inteiros
+     para uma segunda linha em vez de espremer o nome do paciente até 35px,
+     que foi o que aconteceu quando estavam soltos na linha. */
+  /* Espaços apertados só aqui: com os padrões, a linha passava do limite por
+     poucos pixels e quebrava em duas mesmo no computador, onde cabe. */
+  .faceta-agenda .task { flex-wrap: wrap; row-gap: 8px; gap: 8px; padding-left: 13px; }
+  .atend-acoes { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
+  .atend-acoes .iconbtn { width: 28px; height: 28px; }
 
   .fields-row { display: flex; gap: 9px; }
   .fields-row .field-qty { flex: 0 0 104px; }
@@ -848,7 +857,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v26";
+  var VERSAO_APP = "v27";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -3075,8 +3084,37 @@
         render();
       });
     }
-    row.appendChild(conf);
+    var acoes = el("div", "atend-acoes");
+    acoes.appendChild(conf);
 
+    // Editar e excluir continuam na linha, a pedido dele. Tocar no nome abre a
+    // mesma coisa que o lápis — quem prefere o botão tem o botão, quem toca no
+    // atendimento chega no mesmo lugar.
+    if (podeEditarAtend(a)) {
+      var acts = el("div", "task-acts");
+
+      var edit = el("button", "iconbtn");
+      edit.type = "button";
+      edit.setAttribute("aria-label", "Editar atendimento");
+      edit.appendChild(svgPath(ICON_EDIT));
+      edit.addEventListener("click", function () {
+        atendEditando = a.id;
+        formOpen = false;
+        render();
+      });
+      acts.appendChild(edit);
+
+      var del = el("button", "iconbtn");
+      del.type = "button";
+      del.setAttribute("aria-label", "Excluir atendimento");
+      del.appendChild(svgPath(ICON_DEL));
+      armarExclusao(del, "Excluir atendimento", function () { excluirAtendimento(a); });
+      acts.appendChild(del);
+
+      acoes.appendChild(acts);
+    }
+
+    row.appendChild(acoes);
     return row;
   }
 
