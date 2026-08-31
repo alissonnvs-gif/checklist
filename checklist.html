@@ -782,7 +782,8 @@
       radial-gradient(125% 95% at 50% 38%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.62) 100%),
       linear-gradient(168deg, var(--page-a) 0%, var(--page-b) 44%, var(--page-c) 100%);
 
-    --grain-op: 0.40; --grain-blend: soft-light;
+    /* sem granulado no escuro: ele pediu liso */
+    --grain-op: 0; --grain-blend: normal;
   }
 
   body {
@@ -1135,7 +1136,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v29";
+  var VERSAO_APP = "v30";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
