@@ -3,6 +3,9 @@
 <title>Checklist — sua rotina, do jeito que você organiza</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#E5E2DE">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -712,6 +715,265 @@
   .auth-switch:hover { color: var(--ink); }
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* =====================================================================
+     v29 — SISTEMA VISUAL NOVO (agosto/2026)
+
+     Este bloco SOBRESCREVE o CSS acima em vez de substituí-lo. Se algo
+     ficar torto, some apagando daqui — o desenho antigo volta inteiro,
+     sem risco de eu ter apagado uma regra de que outra coisa dependia.
+
+     Vocabulário, medido na referência que o Alisson trouxe:
+       • fundo taupe (claro) e carvão fosco (escuro), com vinheta
+       • vidro translúcido com contorno branco fino
+       • sombra que ATRAVESSA o vidro (drop-shadow, não box-shadow —
+         box-shadow nunca é desenhada por baixo do próprio elemento)
+       • uma mancha OVAL de luz por baixo, forte no meio e morrendo nas
+         pontas (o "sol nascendo"); barra de ponta a ponta é o erro
+       • uma cor de acento só: âmbar
+     ===================================================================== */
+
+  :root, :root[data-theme="dia"] {
+    --ink: #2B2219; --ink-2: #5A4E41; --ink-3: #7C6F60;
+    --page-a: #CEC2B6; --page-b: #BCAE9F; --page-c: #A2937F;
+
+    --laranja: #FF9B2E; --laranja-claro: #FFC078; --laranja-fundo: #E9660A;
+
+    --sheet-a: rgba(255,255,255,0.40); --sheet-b: rgba(255,255,255,0.12);
+    --white-a: rgba(255,255,255,0.62); --white-b: rgba(255,255,255,0.26);
+    --f-rim: rgba(255,255,255,0.85);
+    --f-top: rgba(255,255,255,0.90); --f-bot: rgba(255,255,255,0.34);
+    --f-sideL: rgba(255,255,255,0.10); --f-sideR: rgba(255,255,255,0.08);
+    --cast: rgba(56,42,28,0.42);
+
+    --sombra-cor: rgba(56,42,28,0.42);
+    --luz-cor: 255,255,255;
+    --luz-forca: 1;
+
+    --fundo-img:
+      radial-gradient(46% 34% at 84% 2%,  rgba(255,226,180,0.92), rgba(255,226,180,0) 66%),
+      radial-gradient(38% 26% at 99% 20%, rgba(255,168,104,0.30), rgba(255,168,104,0) 70%),
+      radial-gradient(60% 44% at 6% 92%,  rgba(169,164,188,0.75), rgba(169,164,188,0) 74%),
+      radial-gradient(44% 30% at 30% 34%, rgba(255,252,246,0.62), rgba(255,252,246,0) 72%),
+      linear-gradient(162deg, var(--page-a) 2%, var(--page-b) 44%, var(--page-c) 96%);
+
+    --grain-op: 0.26; --grain-blend: overlay;
+  }
+
+  :root[data-theme="noite"] {
+    --ink: #E9E2D8; --ink-2: #A79C8E; --ink-3: #7A7062;
+    --page-a: #2E2D34; --page-b: #232228; --page-c: #16151A;
+
+    --sheet-a: rgba(255,255,255,0.13); --sheet-b: rgba(255,255,255,0.05);
+    --white-a: rgba(255,255,255,0.18); --white-b: rgba(255,255,255,0.07);
+    --f-rim: rgba(255,255,255,0.18);
+    --f-top: rgba(255,255,255,0.16); --f-bot: rgba(255,255,255,0.07);
+    --f-sideL: rgba(255,255,255,0.04); --f-sideR: rgba(255,255,255,0.03);
+    --cast: rgba(0,0,0,0.6);
+
+    --sombra-cor: rgba(0,0,0,0.58);
+    --luz-cor: 255,238,210;
+    --luz-forca: 0.62;
+
+    --fundo-img:
+      radial-gradient(50% 32% at 86% 2%,  rgba(255,176,92,0.16), rgba(255,176,92,0) 66%),
+      radial-gradient(46% 30% at 10% 24%, rgba(126,100,138,0.30), rgba(126,100,138,0) 70%),
+      radial-gradient(56% 38% at 62% 62%, rgba(72,92,102,0.24), rgba(72,92,102,0) 72%),
+      radial-gradient(125% 95% at 50% 38%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.62) 100%),
+      linear-gradient(168deg, var(--page-a) 0%, var(--page-b) 44%, var(--page-c) 100%);
+
+    --grain-op: 0.40; --grain-blend: soft-light;
+  }
+
+  body {
+    background: var(--fundo-img) fixed var(--page-b);
+    background-size: cover;
+    font-family: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+
+  /* as bolhas coloridas do fundo antigo dariam briga com o degradê novo */
+  .bg-orb { display: none !important; }
+
+  /* ---------------- TIPOGRAFIA ----------------
+     Poppins nos títulos, Inter no corpo, Jost nos números e rótulos. */
+  .wordmark { font-family: "Poppins", sans-serif; font-weight: 600; letter-spacing: -0.01em; }
+  .greet { font-family: "Poppins", sans-serif; font-weight: 600; letter-spacing: -0.02em; }
+  .auth-title { font-family: "Poppins", sans-serif; }
+  .datestamp, .bar-label, .bar-count, .task-time, .sec-name, .sec-sub, .sec-note,
+  .dp-l, .dp-n, .week-label, .item-qty, .atend-hora, .listcard-count, .latebtn-count {
+    font-family: "Jost", sans-serif; font-weight: 300;
+  }
+  .task-title { font-weight: 400; color: var(--ink); }
+  .task-cat { font-family: "Jost", sans-serif; font-weight: 400; font-size: 0.72rem; letter-spacing: 0.04em; }
+
+  /* ---------------- VIDRO ----------------
+     A sombra vira drop-shadow para poder aparecer ATRAVÉS do vidro, e a
+     luz vira uma mancha oval por baixo. O brilho antigo (.gl::before)
+     sai: ele dependia do recorte, e agora nada é recortado. */
+  .gl {
+    overflow: visible;
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    box-shadow:
+      inset 0 1px 0 var(--f-top),
+      inset 0 -1px 0 var(--f-bot),
+      inset 0 0 0 1px var(--f-rim);
+    filter: drop-shadow(2px 9px 9px var(--sombra-cor));
+  }
+  .gl::before { display: none; }
+  .gl::after {
+    content: ""; position: absolute; left: 14%; right: 14%;
+    bottom: -20px; height: 28px; border-radius: 50%;
+    z-index: 0; pointer-events: none;
+    background: radial-gradient(closest-side at 50% 28%,
+      rgba(var(--luz-cor), var(--luz-forca)) 0%,
+      rgba(var(--luz-cor), calc(var(--luz-forca) * 0.94)) 30%,
+      rgba(var(--luz-cor), calc(var(--luz-forca) * 0.62)) 52%,
+      rgba(var(--luz-cor), 0) 88%);
+    filter: blur(9px);
+  }
+  /* peças pequenas não ganham mancha: viraria sujeira */
+  .miniicon::after, .iconbtn::after, .wbtn::after, .swatch::after,
+  .th::after, .fc::after, .cat::after, .daypill::after, .lamp::after { display: none; }
+
+  /* ---------------- LINHA DA TAREFA ---------------- */
+  .task { border-radius: 999px; padding: 8px 12px 8px 9px; min-height: 56px; gap: 12px; }
+  .task[data-on="true"] {
+    filter: none;
+    background: linear-gradient(180deg, rgba(255,255,255,0.26), rgba(255,255,255,0.12));
+    box-shadow:
+      inset 0 3px 6px rgba(58,44,30,0.22),
+      inset 0 -1px 0 rgba(255,255,255,0.55),
+      inset 0 0 0 1px rgba(255,255,255,0.42);
+  }
+  :root[data-theme="noite"] .task[data-on="true"] {
+    background: linear-gradient(180deg, rgba(0,0,0,0.30), rgba(0,0,0,0.16));
+    box-shadow:
+      inset 0 3px 7px rgba(0,0,0,0.55),
+      inset 0 -1px 0 rgba(255,255,255,0.06),
+      inset 0 0 0 1px rgba(255,255,255,0.07);
+  }
+  .task[data-on="true"]::after { display: none; }
+  .task[data-on="true"] .task-title { opacity: 0.72; }
+
+  /* a bolinha: fosca, na cor da aba enquanto falta fazer */
+  .lamp {
+    width: 25px; height: 25px; border-radius: 999px; flex: none;
+    border: 1px solid rgba(255,255,255,0.50);
+    background: linear-gradient(150deg, var(--c1, #C9BFB2), var(--c2, #AFA396));
+    box-shadow: inset 0 -1px 2px rgba(58,44,28,0.12), 0 1px 2px -1px rgba(56,42,28,0.45);
+  }
+  .lamp::before { display: none; }
+  .task[data-on="true"] .lamp {
+    background: linear-gradient(180deg, rgba(172,159,142,0.95), rgba(146,133,116,0.95));
+    border-color: rgba(255,255,255,0.40);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -2px 3px rgba(52,38,24,0.28);
+  }
+  :root[data-theme="noite"] .task[data-on="true"] .lamp {
+    background: linear-gradient(180deg, rgba(120,112,100,0.9), rgba(92,85,75,0.92));
+    border-color: rgba(255,255,255,0.16);
+  }
+  .tick path { stroke: #FFFBF4; stroke-width: 2.6; }
+
+  /* ---------------- PROGRESSO ----------------
+     Poço cavado + uma luz correndo dentro dele. */
+  .prog { border-radius: 26px; }
+  .track {
+    height: 14px; border-radius: 999px; padding: 3px;
+    background: rgba(96,74,52,0.28);
+    box-shadow: inset 0 2px 4px rgba(74,56,36,0.45), inset 0 -1px 0 rgba(255,255,255,0.18),
+                0 1px 0 rgba(255,255,255,0.75);
+  }
+  :root[data-theme="noite"] .track {
+    background: rgba(0,0,0,0.44);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.65), inset 0 -1px 0 rgba(255,255,255,0.10),
+                0 1px 0 rgba(255,255,255,0.10);
+  }
+  .fill, .fill-a, .fill-b, .fill-cat {
+    top: 3px; bottom: 3px; left: 3px;
+    background: linear-gradient(180deg, #FFFFFF, #FCF7F0);
+    box-shadow: 0 0 6px 1px rgba(255,236,200,0.95),
+                0 0 14px 4px rgba(255,178,96,0.70),
+                0 0 26px 9px rgba(255,150,60,0.38);
+  }
+
+  /* ---------------- EM ATRASO ----------------
+     Vidro por fora, laranja fino por dentro. */
+  .latebtn { padding: 4px; border-radius: 999px; }
+  .latebtn-in {
+    flex: 1; display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; border-radius: 999px; color: #FFF8EE;
+    background: linear-gradient(180deg, #FFA53A, var(--laranja-fundo));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 4px 10px -5px rgba(233,102,10,0.9);
+  }
+  .latebtn-name { color: inherit; font-family: "Poppins", sans-serif; font-weight: 600; }
+  .latebtn-count { color: inherit; opacity: 0.92; }
+  .latebtn-chev { color: inherit; }
+
+  /* ---------------- CABEÇALHO DE DIA QUE RECOLHE ---------------- */
+  .diabtn {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 11px 16px 11px 18px; border-radius: 999px; border: 0;
+    margin: 22px 0 12px; cursor: pointer; text-align: left; color: var(--ink);
+  }
+  .diabtn-nome { flex: 1; font-family: "Jost", sans-serif; font-weight: 300;
+                 font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); }
+  .diabtn-conta { font-family: "Jost", sans-serif; font-weight: 400; font-size: 0.78rem; color: var(--laranja-fundo); }
+  :root[data-theme="noite"] .diabtn-conta { color: #FFB05C; }
+  .diabtn-chev { width: 15px; height: 15px; flex: none; transition: transform 0.25s ease; }
+  .diabtn-chev path { stroke: var(--ink-2); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  .diabtn[aria-expanded="false"] .diabtn-chev { transform: rotate(-90deg); }
+
+  /* ---------------- PASTILHAS ---------------- */
+  .cat, .fc, .th { border-radius: 999px; }
+  .fc[aria-pressed="true"], .th[aria-pressed="true"] {
+    color: #FFF6EA;
+    background: linear-gradient(180deg, var(--laranja-claro), var(--laranja));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 6px 12px -6px rgba(233,102,10,0.9);
+  }
+  .cats { overflow: visible; flex-wrap: wrap; }
+
+  /* ---------------- AGENDA ---------------- */
+  .atend-hora { font-size: 1.05rem; font-weight: 400; color: var(--laranja-fundo); }
+  :root[data-theme="noite"] .atend-hora { color: #FFC078; }
+  /* já atendido: o confirmar apaga — ele só serve enquanto a pessoa não veio */
+  .task[data-on="true"] .confbtn { opacity: 0.42; }
+  .task[data-on="true"] .confbtn-luz { box-shadow: none; }
+
+  /* ---------------- LISTAS ---------------- */
+  .listcard, .item-row { border-radius: 999px; }
+  .item-qty { font-size: 1.05rem; font-weight: 400; }
+
+  /* lápis e X viram ícone, sem cápsula: o nome da tarefa ganha o espaço */
+  .task .iconbtn, .atend-acoes .iconbtn {
+    background: none; box-shadow: none; backdrop-filter: none;
+    -webkit-backdrop-filter: none; filter: none; color: var(--ink-3);
+  }
+  .task .iconbtn::before, .atend-acoes .iconbtn::before { display: none; }
+  .latebtn-name { flex: 1; }
+
+  /* "Minhas agendas": era texto disfarçado de botão, agora é botão */
+  .btn-agendas {
+    display: inline-flex; align-items: center; gap: 9px;
+    margin: 20px 0 0; padding: 11px 18px; border-radius: 999px; border: 0;
+    font-family: "Poppins", sans-serif; font-weight: 500; font-size: 0.82rem;
+    color: var(--ink); cursor: pointer;
+  }
+  .addrow-topo { margin: 0 0 18px; }
+  #addrowBaixo { margin-top: 20px; }
+  #addrowBaixo[hidden] { display: none; }
+
+  /* ---------------- ESCOLHA DE COR NA CRIAÇÃO ---------------- */
+  .cores-criar { display: flex; gap: 11px; flex-wrap: wrap; margin: 9px 0 4px; }
+  .cor-criar {
+    width: 30px; height: 30px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.55);
+    padding: 0; cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 4px -2px rgba(56,42,28,0.6);
+  }
+  .cor-criar[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .rot-criar { font-family: "Jost", sans-serif; font-weight: 400; font-size: 0.66rem;
+               letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); margin-top: 14px; }
+
 </style>
 
 <style id="catStyles"></style>
@@ -755,12 +1017,19 @@
 
   <div id="weekbarSlot"></div>
 
-  <main id="body"></main>
-
-  <div class="addrow" id="addrow">
+  <div class="addrow addrow-topo" id="addrow">
     <button class="gl gl-white newbtn" id="newbtn" type="button" aria-expanded="false">
       <span class="newbtn-chip"><svg class="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5 V19 M5 12 H19"></path></svg></span>
       <span id="newbtnLabel">Nova tarefa</span>
+    </button>
+  </div>
+
+  <main id="body"></main>
+
+  <div class="addrow" id="addrowBaixo" hidden>
+    <button class="gl gl-white newbtn" id="newbtnBaixo" type="button">
+      <span class="newbtn-chip"><svg class="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5 V19 M5 12 H19"></path></svg></span>
+      <span id="newbtnLabelBaixo">Novo item</span>
     </button>
   </div>
 
@@ -866,7 +1135,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v28";
+  var VERSAO_APP = "v29";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -1240,6 +1509,8 @@
   var elCatStyles = document.getElementById("catStyles");
   var elOrbs = document.getElementById("orbs");
   var elAddRow = document.getElementById("addrow");
+  var elAddRowBaixo = document.getElementById("addrowBaixo");
+  var elNewBtnBaixo = document.getElementById("newbtnBaixo");
   var elGear = document.getElementById("gearbtn");
   var elRodape = document.querySelector("footer.note");
   var RODAPE_ROTINA = elRodape ? elRodape.textContent : "";
@@ -1426,6 +1697,7 @@
   // cumpre o papel de alerta. Volta a fechar a cada abertura do app, de
   // propósito — para não virar paisagem.
   var lateOpen = false;
+  // nasce tudo fechado a cada abertura: a Geral abre no hoje
   var ICON_CHEV = "M6 9.5 L12 15.5 L18 9.5";
 
   function lateBlock(catIds, showCat) {
@@ -1435,10 +1707,12 @@
     var botao = el("button", "gl gl-clear latebtn");
     botao.type = "button";
     botao.setAttribute("aria-expanded", String(lateOpen));
-    botao.appendChild(el("span", "latebtn-name", "Em atraso"));
-    botao.appendChild(el("span", "latebtn-count",
+    var dentro = el("span", "latebtn-in");
+    dentro.appendChild(el("span", "latebtn-name", "Em atraso"));
+    dentro.appendChild(el("span", "latebtn-count",
       atrasadas.length === 1 ? "1 tarefa" : atrasadas.length + " tarefas"));
-    botao.appendChild(svgPath(ICON_CHEV, "latebtn-chev"));
+    dentro.appendChild(svgPath(ICON_CHEV, "latebtn-chev"));
+    botao.appendChild(dentro);
     botao.addEventListener("click", function () {
       lateOpen = !lateOpen;
       render();
@@ -1798,6 +2072,26 @@
      PÁGINA GERAL
      ========================================================= */
 
+  // Quais seções da Geral estão recolhidas. Fecha a cada abertura do app,
+  // igual ao Em atraso: assim a tela abre no que importa hoje, e o resto
+  // fica a um toque. A contagem no cabeçalho garante que nada some calado.
+  var secFechada = {};
+
+  function cabecalhoRecolhivel(chave, titulo, nota, quantas) {
+    var b = el("button", "gl gl-clear diabtn");
+    b.type = "button";
+    var aberta = !secFechada[chave];
+    b.setAttribute("aria-expanded", String(aberta));
+    b.appendChild(el("span", "diabtn-nome", titulo));
+    if (nota) b.appendChild(el("span", "diabtn-conta", nota));
+    b.appendChild(svgPath(ICON_CHEV, "diabtn-chev"));
+    b.addEventListener("click", function () {
+      secFechada[chave] = aberta;
+      render();
+    });
+    return b;
+  }
+
   function renderOverview() {
     elBody.innerHTML = "";
     lateBlock(allCatIds(), true);
@@ -1810,10 +2104,18 @@
       any = true;
 
       var open = occs.filter(function (o) { return !o.done; }).length;
-      var head = el("div", "sec-head");
-      head.appendChild(el("span", "sec-name", overviewDayLabel(off, d)));
-      head.appendChild(el("span", "sec-note", open === 0 ? "tudo feito" : (open === 1 ? "1 aberta" : open + " abertas")));
-      elBody.appendChild(head);
+      var nota = open === 0 ? "tudo feito" : (open === 1 ? "1 aberta" : open + " abertas");
+
+      if (off === 0) {
+        var head = el("div", "sec-head");
+        head.appendChild(el("span", "sec-name", overviewDayLabel(off, d)));
+        head.appendChild(el("span", "sec-note", nota));
+        elBody.appendChild(head);
+      } else {
+        var chave = "dia" + off;
+        elBody.appendChild(cabecalhoRecolhivel(chave, overviewDayLabel(off, d), nota));
+        if (secFechada[chave]) continue;
+      }
 
       var list = el("div", "list");
       occs.forEach(function (o) { list.appendChild(taskRow(o, {})); });
@@ -1830,10 +2132,10 @@
       });
     });
 
-    var h = el("div", "sec-head");
-    h.appendChild(el("span", "sec-name", "Resolver"));
-    h.appendChild(el("span", "sec-note", loose.length ? loose.length + " sem data" : "vazio"));
-    elBody.appendChild(h);
+    elBody.appendChild(cabecalhoRecolhivel("resolver", "Resolver",
+      loose.length ? loose.length + " sem data" : "vazio"));
+
+    if (secFechada.resolver) return;
 
     if (!loose.length) {
       elBody.appendChild(el("div", "empty", "Nada pendente sem data."));
@@ -2176,6 +2478,10 @@
   function renderForm() {
     elFormSlot.innerHTML = "";
     elNewBtn.setAttribute("aria-expanded", String(formOpen));
+    // A cópia de baixo existe só DENTRO de uma lista: é lá que a rolagem
+    // até o fim incomodava. Nas outras telas ela seria repetição à toa.
+    var listaEmAberto = state.faceta === "listas" && listaAberta ? listaDe(listaAberta) : null;
+    elAddRowBaixo.hidden = !(listaEmAberto && podeEditar(listaEmAberto) && !formOpen);
 
     if (state.faceta === "agenda") {
       elNewLabel.textContent = "Novo atendimento";
@@ -2910,9 +3216,8 @@
       wrap.appendChild(lista);
     }
 
-    var abrir = el("button", "minibtn minibtn-ghost", "Minhas agendas");
+    var abrir = el("button", "gl gl-clear btn-agendas", "Minhas agendas");
     abrir.type = "button";
-    abrir.style.marginTop = "18px";
     abrir.addEventListener("click", function () { abrirTelaAgendas(); });
     wrap.appendChild(abrir);
 
@@ -4291,6 +4596,8 @@
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
+
+  elNewBtnBaixo.addEventListener("click", function () { elNewBtn.click(); });
 
   elNewBtn.addEventListener("click", function () {
     if (formOpen) {
