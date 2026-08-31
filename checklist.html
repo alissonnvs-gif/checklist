@@ -639,14 +639,23 @@
     display: flex; flex-direction: column; gap: 3px;
   }
 
-  /* Confirmar, editar e excluir andam juntos: no celular eles descem inteiros
-     para uma segunda linha em vez de espremer o nome do paciente até 35px,
-     que foi o que aconteceu quando estavam soltos na linha. */
-  /* Espaços apertados só aqui: com os padrões, a linha passava do limite por
-     poucos pixels e quebrava em duas mesmo no computador, onde cabe. */
-  .faceta-agenda .task { flex-wrap: wrap; row-gap: 8px; gap: 8px; padding-left: 13px; }
-  .atend-acoes { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
+  /* Tudo numa linha só, inclusive no celular: hora, nome, confirmar e os dois
+     ícones. Espaços apertados só aqui, porque com os padrões a linha passava
+     do limite por poucos pixels. */
+  .faceta-agenda .task { flex-wrap: nowrap; gap: 8px; padding-left: 12px; }
+  .atend-acoes { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
   .atend-acoes .iconbtn { width: 28px; height: 28px; }
+
+  /* No celular o lápis fica EM CIMA do X. Não é enfeite: dois botões lado a
+     lado ocupam 62px, empilhados ocupam 28 — e são esses 34px que deixam o
+     confirmar continuar na mesma linha do nome em vez de cair para baixo. */
+  @media (max-width: 520px) {
+    .faceta-agenda .task { gap: 7px; padding-left: 10px; padding-right: 10px; }
+    .faceta-agenda .lamp { width: 28px; height: 28px; }
+    .atend-hora { min-width: 0; }
+    .atend-acoes { gap: 7px; }
+    .atend-acoes .task-acts { flex-direction: column; gap: 5px; }
+  }
 
   .fields-row { display: flex; gap: 9px; }
   .fields-row .field-qty { flex: 0 0 104px; }
@@ -857,7 +866,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v27";
+  var VERSAO_APP = "v28";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
