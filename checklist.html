@@ -591,6 +591,59 @@
     box-shadow: inset 0 1.5px 3px var(--well-in);
   }
 
+  /* ---- linha do atendimento: hora · nome · confirmar ---- */
+
+  /* A hora usa a mesma letra da quantidade nas Listas: é o dado que ele
+     procura de relance ao abrir o dia. */
+  .atend-hora {
+    font-size: 1.15rem; font-weight: 700; color: var(--c-ink);
+    flex: none; line-height: 1.2; font-variant-numeric: tabular-nums;
+    min-width: 3.4em;
+  }
+  .atend-sem-hora { font-size: 0.7rem; font-weight: 600; color: var(--ink-2); }
+
+  /* Confirmado é do dia anterior ("o paciente avisou que vem"); atendido é do
+     fim da consulta. Por isso são botões separados, e o verde só fala do
+     primeiro. */
+  :root, :root[data-theme="dia"] { --ok: #2E7D45; --ok-1: #6BE08F; --ok-2: #2FA85A; }
+  :root[data-theme="noite"]      { --ok: #8CEBA9; }
+
+  .confbtn {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    border: 0; background: transparent; padding: 2px 2px; cursor: pointer;
+    flex: none; color: var(--ink-2); font-family: inherit;
+  }
+  .confbtn-luz {
+    width: 24px; height: 24px; border-radius: 9px;
+    display: grid; place-content: center; color: transparent;
+    background: linear-gradient(180deg, var(--well-a), var(--well-b));
+    box-shadow: inset 0 1.5px 3px var(--well-in);
+    transition: background 0.28s ease, box-shadow 0.28s ease, color 0.2s ease;
+  }
+  .confbtn-luz svg { width: 14px; height: 14px; display: block; }
+  .confbtn-luz svg path {
+    stroke: currentColor; stroke-width: 2.6; stroke-linecap: round;
+    stroke-linejoin: round; fill: none;
+  }
+  .confbtn-txt {
+    font-size: 0.53rem; font-weight: 700; letter-spacing: 0.07em;
+    text-transform: uppercase; line-height: 1;
+  }
+  .confbtn[aria-pressed="true"] { color: var(--ok); }
+  .confbtn[aria-pressed="true"] .confbtn-luz {
+    color: #fff;
+    background: linear-gradient(150deg, var(--ok-1), var(--ok-2));
+    box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.55), 0 0 11px -2px var(--ok-2);
+  }
+  .confbtn:disabled { cursor: default; }
+
+  /* O corpo do atendimento vira botão: tocar abre o que foi preenchido. */
+  .atend-abrir {
+    flex: 1; min-width: 0; border: 0; background: transparent; padding: 0;
+    font: inherit; color: inherit; text-align: left; cursor: pointer;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+
   .fields-row { display: flex; gap: 9px; }
   .fields-row .field-qty { flex: 0 0 104px; }
   .fields-row .field-hora { flex: 0 0 122px; }
@@ -800,7 +853,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v24";
+  var VERSAO_APP = "v25";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -1002,6 +1055,7 @@
       if (typeof a.kind !== "string") a.kind = "";
       if (typeof a.note !== "string") a.note = "";
       a.done = !!a.done;
+      a.confirmado = !!a.confirmado;
       if (a.canEdit === undefined) a.canEdit = true;
       if (!a.createdAt) a.createdAt = Date.now();
     });
@@ -2983,41 +3037,52 @@
     }
     row.appendChild(lamp);
 
-    var body = el("span", "task-body");
-    body.appendChild(el("span", "task-title", a.name));
-    if (a.note) body.appendChild(el("span", "task-note", a.note));
+    // Ordem pedida por ele: hora, nome, confirmar. A hora vem primeiro porque
+    // é por ela que se lê um dia de atendimentos.
+    row.appendChild(a.time
+      ? el("span", "atend-hora", a.time)
+      : el("span", "atend-hora atend-sem-hora", "sem hora"));
+
+    // O corpo inteiro abre o atendimento: o lápis virava um alvo pequeno para
+    // uma ação que é a mais comum depois de marcar — ver o que foi anotado.
+    var abrir = el("button", "atend-abrir");
+    abrir.type = "button";
+    abrir.setAttribute("aria-label", "Abrir " + (a.name || "atendimento"));
+    abrir.appendChild(el("span", "task-title", a.name));
+    if (a.note) abrir.appendChild(el("span", "task-note", a.note));
     if (a.kind) {
       var meta = el("span", "task-meta");
       meta.appendChild(el("span", "task-cat", a.kind));
-      body.appendChild(meta);
+      abrir.appendChild(meta);
     }
-    row.appendChild(body);
+    abrir.addEventListener("click", function () {
+      atendEditando = a.id;
+      formOpen = false;
+      render();
+    });
+    row.appendChild(abrir);
 
-    if (a.time) row.appendChild(el("span", "task-time", a.time));
-
-    if (podeEditarAtend(a)) {
-      var acts = el("div", "task-acts");
-
-      var edit = el("button", "iconbtn");
-      edit.type = "button";
-      edit.setAttribute("aria-label", "Editar atendimento");
-      edit.appendChild(svgPath(ICON_EDIT));
-      edit.addEventListener("click", function () {
-        atendEditando = a.id;
-        formOpen = false;
+    // Confirmado é outra coisa que atendido: é o "avisou que vem", da véspera.
+    var conf = el("button", "confbtn");
+    conf.type = "button";
+    conf.setAttribute("aria-pressed", String(!!a.confirmado));
+    conf.setAttribute("aria-label", a.confirmado
+      ? "Desfazer confirmação de " + (a.name || "atendimento")
+      : "Confirmar " + (a.name || "atendimento"));
+    var luz = el("span", "confbtn-luz");
+    luz.appendChild(svgPath(ICON_TICK));
+    conf.appendChild(luz);
+    conf.appendChild(el("span", "confbtn-txt", a.confirmado ? "confirmado" : "confirmar"));
+    if (!podeEditarAtend(a)) {
+      conf.disabled = true;
+    } else {
+      conf.addEventListener("click", function () {
+        a.confirmado = !a.confirmado;
+        save();
         render();
       });
-      acts.appendChild(edit);
-
-      var del = el("button", "iconbtn");
-      del.type = "button";
-      del.setAttribute("aria-label", "Excluir atendimento");
-      del.appendChild(svgPath(ICON_DEL));
-      armarExclusao(del, "Excluir atendimento", function () { excluirAtendimento(a); });
-      acts.appendChild(del);
-
-      row.appendChild(acts);
     }
+    row.appendChild(conf);
 
     return row;
   }
@@ -4246,6 +4311,9 @@
   // e o app segue funcionando sem esse aviso até o SQL ser rodado.
   var colunaAvisoAgenda = true;
 
+  // Mesma ideia para a coluna "confirmed" do atendimento (12_confirmado.sql).
+  var colunaConfirmado = true;
+
   function desiredRows() {
     var rows = { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {}, agendas: {} };
     var n = state.notif || {};
@@ -4352,6 +4420,9 @@
         done: !!a.done,
         created_at: new Date(a.createdAt || Date.now()).toISOString()
       };
+      // A coluna do "confirmado" é nova. Se o banco desta conta ainda não a
+      // tiver, ela sai do envio em vez de o atendimento inteiro ser recusado.
+      if (colunaConfirmado) rows.appts[a.id].confirmed = !!a.confirmado;
     });
 
     return rows;
@@ -4691,6 +4762,15 @@
     });
     if (apPend.length) {
       var ra = await gravarLinhas("appointments", apPend.map(function (p) { return p[2]; }));
+      if (ra.error && colunaConfirmado && tabelaFaltando(ra.error)) {
+        // Banco ainda sem a coluna do confirmado: manda sem ela e segue.
+        colunaConfirmado = false;
+        ra = await gravarLinhas("appointments", apPend.map(function (p) {
+          var copia = Object.assign({}, p[2]);
+          delete copia.confirmed;
+          return copia;
+        }));
+      }
       if (ra.error) {
         if (tabelaFaltando(ra.error)) { agendaOk = false; return; }
         throw ra.error;
@@ -4790,7 +4870,9 @@
       var ea = await Promise.all([
         // O RLS já devolve as minhas E as que me compartilharam.
         sb.from("agendas").select("id,owner_id,title,sort_order,created_at"),
-        sb.from("appointments").select("id,agenda_id,owner_id,day_date,time_of_day,name,kind,note,done,created_at")
+        // "*" pelo mesmo motivo do perfil: pedir uma coluna que o banco ainda
+        // não tem derruba a busca inteira e leva as tarefas junto.
+        sb.from("appointments").select("*")
       ]);
       var erroAg = ea[0].error || ea[1].error;
       if (erroAg) {
@@ -5010,6 +5092,7 @@
           kind: r.kind || "",
           note: r.note || "",
           done: !!r.done,
+          confirmado: !!r.confirmed,
           createdAt: Date.parse(r.created_at) || Date.now()
         };
       });
