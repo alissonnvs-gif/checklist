@@ -613,17 +613,13 @@
     border: 0; background: transparent; padding: 2px 2px; cursor: pointer;
     flex: none; color: var(--ink-2); font-family: inherit;
   }
+  /* Uma bolinha que acende, sem símbolo dentro: o texto embaixo já diz o que
+     ela significa, e o certinho dentro dela era ruído em cima de ruído. */
   .confbtn-luz {
-    width: 24px; height: 24px; border-radius: 9px;
-    display: grid; place-content: center; color: transparent;
+    width: 17px; height: 17px; border-radius: 50%;
     background: linear-gradient(180deg, var(--well-a), var(--well-b));
     box-shadow: inset 0 1.5px 3px var(--well-in);
-    transition: background 0.28s ease, box-shadow 0.28s ease, color 0.2s ease;
-  }
-  .confbtn-luz svg { width: 14px; height: 14px; display: block; }
-  .confbtn-luz svg path {
-    stroke: currentColor; stroke-width: 2.6; stroke-linecap: round;
-    stroke-linejoin: round; fill: none;
+    transition: background 0.28s ease, box-shadow 0.28s ease;
   }
   .confbtn-txt {
     font-size: 0.53rem; font-weight: 700; letter-spacing: 0.07em;
@@ -631,9 +627,8 @@
   }
   .confbtn[aria-pressed="true"] { color: var(--ok); }
   .confbtn[aria-pressed="true"] .confbtn-luz {
-    color: #fff;
     background: linear-gradient(150deg, var(--ok-1), var(--ok-2));
-    box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.55), 0 0 11px -2px var(--ok-2);
+    box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.55), 0 0 10px -1px var(--ok-2);
   }
   .confbtn:disabled { cursor: default; }
 
@@ -853,7 +848,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v25";
+  var VERSAO_APP = "v26";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -3069,9 +3064,7 @@
     conf.setAttribute("aria-label", a.confirmado
       ? "Desfazer confirmação de " + (a.name || "atendimento")
       : "Confirmar " + (a.name || "atendimento"));
-    var luz = el("span", "confbtn-luz");
-    luz.appendChild(svgPath(ICON_TICK));
-    conf.appendChild(luz);
+    conf.appendChild(el("span", "confbtn-luz"));
     conf.appendChild(el("span", "confbtn-txt", a.confirmado ? "confirmado" : "confirmar"));
     if (!podeEditarAtend(a)) {
       conf.disabled = true;
