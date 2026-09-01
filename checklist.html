@@ -5268,18 +5268,22 @@
       if (srv.lists[lid] === lfp) continue;
       var linhaL = want.lists[lid];
       if (!colunaCorLista) { linhaL = Object.assign({}, linhaL); delete linhaL.palette; }
+      // Mesmo cuidado das agendas: registra o que foi de fato enviado, não o
+      // que se queria enviar — senão uma cor recusada pelo banco fica marcada
+      // como sincronizada e nunca mais é tentada de novo.
+      var enviadoL = linhaL;
       var rl = await gravarLinha("lists", linhaL, !!srv.lists[lid]);
       if (rl.error && colunaCorLista && tabelaFaltando(rl.error)) {
         colunaCorLista = false;
-        var semCorL = Object.assign({}, linhaL); delete semCorL.palette;
-        rl = await gravarLinha("lists", semCorL, !!srv.lists[lid]);
+        enviadoL = Object.assign({}, linhaL); delete enviadoL.palette;
+        rl = await gravarLinha("lists", enviadoL, !!srv.lists[lid]);
       }
       if (rl.error) {
         if (tabelaFaltando(rl.error)) { listasOk = false; return; }
         if (rl.error.code === "P0001") { recusarLista(lid, rl.error.message); continue; }
         throw rl.error;
       }
-      srv.lists[lid] = lfp;
+      srv.lists[lid] = fpOf(enviadoL);
     }
 
     // 9. itens novos ou alterados
@@ -5322,11 +5326,17 @@
     for (var gi = 0; gi < agPend.length; gi++) {
       var linhaG = agPend[gi][2];
       if (!colunaCorAgenda) { linhaG = Object.assign({}, linhaG); delete linhaG.palette; }
+      // Guarda o que REALMENTE foi mandado (pode perder a cor no meio, se a
+      // coluna ainda não existir) — é essa versão que conta como "enviada",
+      // não a que a gente queria mandar. Gravar a versão desejada aqui fazia
+      // a cor se dar por enviada mesmo quando o banco recusou e ela nunca
+      // mais era tentada de novo: parecia sincronizado, mas nunca gravava.
+      var enviadoG = linhaG;
       var rg = await gravarLinha("agendas", linhaG, !!srv.agendas[agPend[gi][0]]);
       if (rg.error && colunaCorAgenda && tabelaFaltando(rg.error)) {
         colunaCorAgenda = false;
-        var semCorG = Object.assign({}, linhaG); delete semCorG.palette;
-        rg = await gravarLinha("agendas", semCorG, !!srv.agendas[agPend[gi][0]]);
+        enviadoG = Object.assign({}, linhaG); delete enviadoG.palette;
+        rg = await gravarLinha("agendas", enviadoG, !!srv.agendas[agPend[gi][0]]);
       }
       if (rg.error) {
         if (tabelaFaltando(rg.error)) { agendaOk = false; return; }
@@ -5335,7 +5345,7 @@
         if (rg.error.code === "P0001") { recusarAgenda(agPend[gi][0], rg.error.message); continue; }
         throw rg.error;
       }
-      srv.agendas[agPend[gi][0]] = agPend[gi][1];
+      srv.agendas[agPend[gi][0]] = fpOf(enviadoG);
     }
 
     // 11. atendimentos novos ou alterados
