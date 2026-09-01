@@ -916,11 +916,16 @@
     display: flex; align-items: center; gap: 10px; width: 100%;
     padding: 11px 16px 11px 18px; border-radius: 999px; border: 0;
     margin: 22px 0 12px; cursor: pointer; text-align: left; color: var(--ink);
+    /* tom próprio, fraco: é o que faz a faixa delimitar o dia sem virar
+       mais um cartão igual aos outros */
+    background: linear-gradient(180deg, rgba(104,84,62,0.20), rgba(104,84,62,0.11));
+  }
+  :root[data-theme="noite"] .diabtn {
+    background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
   }
   .diabtn-nome { flex: 1; font-family: "Jost", sans-serif; font-weight: 300;
                  font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); }
-  .diabtn-conta { font-family: "Jost", sans-serif; font-weight: 400; font-size: 0.78rem; color: var(--laranja-fundo); }
-  :root[data-theme="noite"] .diabtn-conta { color: #FFB05C; }
+  .diabtn-conta { font-family: "Jost", sans-serif; font-weight: 400; font-size: 0.78rem; color: var(--ink-2); }
   .diabtn-chev { width: 15px; height: 15px; flex: none; transition: transform 0.25s ease; }
   .diabtn-chev path { stroke: var(--ink-2); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
   .diabtn[aria-expanded="false"] .diabtn-chev { transform: rotate(-90deg); }
@@ -935,8 +940,9 @@
   .cats { overflow: visible; flex-wrap: wrap; }
 
   /* ---------------- AGENDA ---------------- */
-  .atend-hora { font-size: 1.05rem; font-weight: 400; color: var(--laranja-fundo); }
-  :root[data-theme="noite"] .atend-hora { color: #FFC078; }
+  /* a hora continua sendo a coisa mais forte da linha — mas pelo tamanho,
+     não pela cor: laranja sobre o taupe claro cansa de ler. */
+  .atend-hora { font-size: 1.05rem; font-weight: 400; color: var(--ink); }
   /* já atendido: o confirmar apaga — ele só serve enquanto a pessoa não veio */
   .task[data-on="true"] .confbtn { opacity: 0.42; }
   .task[data-on="true"] .confbtn-luz { box-shadow: none; }
@@ -972,6 +978,20 @@
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 4px -2px rgba(56,42,28,0.6);
   }
   .cor-criar[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 3px; }
+  /* nenhum realce azul do sistema ao tocar */
+  * { -webkit-tap-highlight-color: transparent; }
+  button:focus:not(:focus-visible),
+  [tabindex]:focus:not(:focus-visible) { outline: none; }
+  button:focus-visible, input:focus-visible, [contenteditable]:focus-visible,
+  a:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--ink); outline-offset: 2px;
+  }
+
+  /* o nome virou texto, não campo: quem edita é a tela de Configurações */
+  .name-fixo { border-bottom: 0 !important; cursor: default; }
+  /* o nome da lista só abre quando se toca no lápis */
+  .listtitle:disabled { border-bottom: 0; color: var(--ink); opacity: 1; }
+
   .rot-criar { font-family: "Jost", sans-serif; font-weight: 400; font-size: 0.66rem;
                letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); margin-top: 14px; }
 
@@ -1092,14 +1112,14 @@
   // dois temas e tem sua versão fechada para texto — a cor que funciona como
   // luz atrás do vidro não funciona como tipografia sobre fundo claro.
   var PALETTES = [
-    { id: "violeta",  label: "Violeta",  c1: "#8593FF", c2: "#B87CFF", inkDia: "#6A4BD4", inkNoite: "#C9AEFF" },
-    { id: "verde",    label: "Verde",    c1: "#4FD97A", c2: "#AEE85C", inkDia: "#4A8C1C", inkNoite: "#C6EF7C" },
-    { id: "coral",    label: "Coral",    c1: "#FFAD86", c2: "#FF6F4E", inkDia: "#D2451F", inkNoite: "#FF9C7E" },
-    { id: "azul",     label: "Azul",     c1: "#63D9F5", c2: "#7290FF", inkDia: "#3B60D6", inkNoite: "#A6BAFF" },
-    { id: "rosa",     label: "Rosa",     c1: "#FF9ECF", c2: "#F2569F", inkDia: "#C02472", inkNoite: "#FFAEDA" },
-    { id: "ambar",    label: "Âmbar",    c1: "#FFD37A", c2: "#FFA332", inkDia: "#A06012", inkNoite: "#FFD08A" },
-    { id: "turquesa", label: "Turquesa", c1: "#5FE0C8", c2: "#2FB6C4", inkDia: "#0E7C86", inkNoite: "#8AE8DC" },
-    { id: "ardosia",  label: "Ardósia",  c1: "#A8B4CC", c2: "#6E7C99", inkDia: "#4C5773", inkNoite: "#C3CCDD" }
+    { id: "violeta",  label: "Ametista",  c1: "#9B7BD4", c2: "#7B5CB8", inkDia: "#5B3E96", inkNoite: "#C3ABEE" },
+    { id: "verde",    label: "Sálvia",    c1: "#7FA86A", c2: "#5E8A4C", inkDia: "#3F6B2E", inkNoite: "#ABD498" },
+    { id: "coral",    label: "Terracota", c1: "#D98B6A", c2: "#C06A4A", inkDia: "#9A462A", inkNoite: "#F0AA8C" },
+    { id: "azul",     label: "Índigo",    c1: "#6E8CC4", c2: "#4E6DA8", inkDia: "#33528F", inkNoite: "#A8BDE8" },
+    { id: "rosa",     label: "Argila",    c1: "#D18AA0", c2: "#B26A82", inkDia: "#93304C", inkNoite: "#EBA8BC" },
+    { id: "ambar",    label: "Ocre",      c1: "#D2A055", c2: "#B27E32", inkDia: "#7E5410", inkNoite: "#E8BE7E" },
+    { id: "turquesa", label: "Verdete",   c1: "#63B0A8", c2: "#43908A", inkDia: "#1F6B64", inkNoite: "#8FD7CE" },
+    { id: "ardosia",  label: "Ardósia",   c1: "#8C93A6", c2: "#6B7285", inkDia: "#4A5164", inkNoite: "#B6BECD" }
   ];
 
   // Ponto de partida para quem abre o app pela primeira vez. A partir daí as
@@ -1136,7 +1156,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v30";
+  var VERSAO_APP = "v31";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -2257,15 +2277,13 @@
 
     if (state.userName) {
       elGreet.appendChild(document.createTextNode(hi + ", "));
-      var nm = el("span", "name", state.userName);
-      wireName(nm);
+      var nm = el("span", "name name-fixo", state.userName);
       elGreet.appendChild(nm);
       elGreet.appendChild(document.createTextNode("."));
     } else {
       elGreet.appendChild(document.createTextNode(hi + ", "));
-      var ph = el("span", "name", "seu nome");
+      var ph = el("span", "name name-fixo", "seu nome");
       ph.style.opacity = "0.55";
-      wireName(ph);
       elGreet.appendChild(ph);
       elGreet.appendChild(document.createTextNode("."));
     }
@@ -2539,6 +2557,12 @@
   var listaAberta = null;    // id da lista aberta; null = tela com todas
   var entrandoComNumero = false;  // campo "entrar com um número" aberto
   var itemEditando = null;   // id do item cuja linha virou formulário
+  // Enquanto o 13_cores.sql não rodar, o banco recusa a coluna da cor. Nesse
+  // caso o app reenvia sem ela: a lista e a agenda salvam do mesmo jeito, só
+  // sem guardar a cor até o SQL existir. Ninguém perde nada por causa disso.
+  var colunaCorLista = true;
+  var colunaCorAgenda = true;
+
   var listasOk = true;       // false quando o banco ainda não tem as tabelas
 
   function listas() {
@@ -2557,7 +2581,7 @@
     return !!l && (!l.ownerId || !currentUser || l.ownerId === currentUser.id);
   }
 
-  function criarLista(nome) {
+  function criarLista(nome, cor) {
     if (listas().length >= LIMITE_LISTAS) {
       showToast("Você já tem " + LIMITE_LISTAS + " listas. Exclua uma pra criar outra.");
       return null;
@@ -2565,6 +2589,7 @@
     var l = {
       id: "l" + uid(),
       title: nome || "Nova lista",
+      palette: cor || "turquesa",
       ownerId: currentUser ? currentUser.id : null,
       canEdit: true,
       items: [],
@@ -2745,8 +2770,11 @@
     nome.type = "text";
     nome.value = l.title;
     nome.setAttribute("aria-label", "Nome da lista");
+    // Nasce travado mesmo quando dá para editar: encostar no título sem
+    // querer, no meio de uma compra, renomeava a lista sem aviso nenhum.
+    nome.disabled = true;
     if (!podeEditar(l)) {
-      nome.disabled = true;
+      nome.dataset.travado = "sempre";
     } else {
       nome.addEventListener("input", function () {
         l.title = nome.value.replace(/\s+/g, " ").trimStart();
@@ -2759,6 +2787,19 @@
       });
     }
     head.appendChild(nome);
+
+    if (podeEditar(l)) {
+      var renomear = el("button", "iconbtn");
+      renomear.type = "button";
+      renomear.setAttribute("aria-label", "Renomear lista");
+      renomear.appendChild(svgPath(ICON_EDIT));
+      renomear.addEventListener("click", function () {
+        nome.disabled = false;
+        nome.focus();
+        nome.select();
+      });
+      head.appendChild(renomear);
+    }
 
     // Compartilhar e excluir são do dono, mesmo quando o convidado pode editar.
     if (listaMinha(l)) {
@@ -2900,11 +2941,17 @@
     campo.appendChild(inp);
     form.appendChild(campo);
 
+    var corDaLista = { id: "turquesa" };
+    form.appendChild(el("div", "rot-criar", "Cor da lista"));
+    form.appendChild(seletorDeCor(
+      function () { return corDaLista.id; },
+      function (id) { corDaLista.id = id; }));
+
     var acts = el("div", "form-acts");
     var ok = el("button", "minibtn", "Criar lista");
     ok.type = "button";
     ok.addEventListener("click", function () {
-      var nova = criarLista(inp.value.replace(/\s+/g, " ").trim());
+      var nova = criarLista(inp.value.replace(/\s+/g, " ").trim(), corDaLista.id);
       formOpen = false;
       if (nova) listaAberta = nova.id;
       render();
@@ -3105,7 +3152,68 @@
       });
   }
 
-  function criarAgenda(nome) {
+  // O que está sendo criado agora ({nome, cor}), ou null quando não há
+  // criação em curso. Vive só na tela: nada disso vai para o servidor
+  // antes de a pessoa confirmar.
+  var criandoAgenda = null;
+
+  function seletorDeCor(lerEscolha, aoTrocar) {
+    var box = el("div", "cores-criar");
+    PALETTES.forEach(function (p) {
+      var b = el("button", "cor-criar");
+      b.type = "button";
+      b.setAttribute("aria-label", p.label);
+      b.setAttribute("aria-pressed", String(lerEscolha() === p.id));
+      b.style.background = "linear-gradient(150deg," + p.c1 + "," + p.c2 + ")";
+      b.addEventListener("click", function () {
+        aoTrocar(p.id);
+        [].slice.call(box.children).forEach(function (x, i) {
+          x.setAttribute("aria-pressed", String(PALETTES[i].id === p.id));
+        });
+      });
+      box.appendChild(b);
+    });
+    return box;
+  }
+
+  function painelNovaAgenda() {
+    var form = el("div", "gl gl-clear form");
+
+    var campo = el("div", "field");
+    campo.appendChild(el("span", "field-label", "Nome da agenda"));
+    var inp = el("input", "inp");
+    inp.type = "text";
+    inp.placeholder = "Atendimentos, pessoal, reuniões...";
+    inp.value = criandoAgenda.nome;
+    inp.addEventListener("input", function () { criandoAgenda.nome = inp.value; });
+    campo.appendChild(inp);
+    form.appendChild(campo);
+
+    form.appendChild(el("div", "rot-criar", "Cor da agenda"));
+    form.appendChild(seletorDeCor(
+      function () { return criandoAgenda.cor; },
+      function (id) { criandoAgenda.cor = id; }));
+
+    var acts = el("div", "form-acts");
+    var ok = el("button", "minibtn", "Criar agenda");
+    ok.type = "button";
+    ok.addEventListener("click", function () {
+      var g = criarAgenda(criandoAgenda.nome.replace(/\s+/g, " ").trim(), criandoAgenda.cor);
+      criandoAgenda = null;
+      if (g) showToast("Agenda criada.");
+      render();
+    });
+    var cancela = el("button", "minibtn minibtn-ghost", "Cancelar");
+    cancela.type = "button";
+    cancela.addEventListener("click", function () { criandoAgenda = null; render(); });
+    acts.appendChild(ok);
+    acts.appendChild(cancela);
+    form.appendChild(acts);
+
+    return form;
+  }
+
+  function criarAgenda(nome, cor) {
     if (minhasAgendas().length >= LIMITE_AGENDAS) {
       showToast("Você já tem " + LIMITE_AGENDAS + " agendas. Exclua uma pra criar outra.");
       return null;
@@ -3114,6 +3222,7 @@
       id: "g" + uid(),
       ownerId: meuId(),
       title: nome || "Nova agenda",
+      palette: cor || "violeta",
       canEdit: true,
       createdAt: Date.now()
     };
@@ -3705,19 +3814,23 @@
       if (compartilhando === g.id) b1.appendChild(blocoConvite("agenda", g.id, g.title));
     });
 
-    var nova = el("button", "minibtn", "Nova agenda");
-    nova.type = "button";
-    nova.style.marginTop = "14px";
-    nova.addEventListener("click", function () {
-      var g = criarAgenda("Nova agenda");
-      if (!g) return;
-      compartilhando = null;
-      render();
-      var campos = elBody.querySelectorAll(".catrow-name");
-      var ultimo = campos[campos.length - 1];
-      if (ultimo) { ultimo.focus(); ultimo.select(); }
-    });
-    b1.appendChild(nova);
+    if (criandoAgenda) {
+      b1.appendChild(painelNovaAgenda());
+    } else {
+      var nova = el("button", "minibtn", "Nova agenda");
+      nova.type = "button";
+      nova.style.marginTop = "14px";
+      nova.addEventListener("click", function () {
+        if (minhasAgendas().length >= LIMITE_AGENDAS) {
+          showToast("Você já tem " + LIMITE_AGENDAS + " agendas. Exclua uma pra criar outra.");
+          return;
+        }
+        criandoAgenda = { nome: "", cor: "violeta" };
+        compartilhando = null;
+        render();
+      });
+      b1.appendChild(nova);
+    }
     wrap.appendChild(b1);
 
     /* --- as dos outros --- */
@@ -4728,6 +4841,7 @@
         id: l.id,
         owner_id: l.ownerId || meuId,
         title: l.title || "Nova lista",
+        palette: l.palette || "turquesa",
         sort_order: li,
         created_at: new Date(l.createdAt || Date.now()).toISOString()
       };
@@ -4748,6 +4862,7 @@
         id: g.id,
         owner_id: g.ownerId || meuId,
         title: g.title || "Nova agenda",
+        palette: g.palette || "violeta",
         sort_order: gi,
         created_at: new Date(g.createdAt || Date.now()).toISOString()
       };
@@ -5044,7 +5159,14 @@
       var lid = lids[li];
       var lfp = fpOf(want.lists[lid]);
       if (srv.lists[lid] === lfp) continue;
-      var rl = await gravarLinha("lists", want.lists[lid], !!srv.lists[lid]);
+      var linhaL = want.lists[lid];
+      if (!colunaCorLista) { linhaL = Object.assign({}, linhaL); delete linhaL.palette; }
+      var rl = await gravarLinha("lists", linhaL, !!srv.lists[lid]);
+      if (rl.error && colunaCorLista && tabelaFaltando(rl.error)) {
+        colunaCorLista = false;
+        var semCorL = Object.assign({}, linhaL); delete semCorL.palette;
+        rl = await gravarLinha("lists", semCorL, !!srv.lists[lid]);
+      }
       if (rl.error) {
         if (tabelaFaltando(rl.error)) { listasOk = false; return; }
         if (rl.error.code === "P0001") { recusarLista(lid, rl.error.message); continue; }
@@ -5091,7 +5213,14 @@
       if (srv.agendas[id] !== fp) agPend.push([id, fp, want.agendas[id]]);
     });
     for (var gi = 0; gi < agPend.length; gi++) {
-      var rg = await gravarLinha("agendas", agPend[gi][2], !!srv.agendas[agPend[gi][0]]);
+      var linhaG = agPend[gi][2];
+      if (!colunaCorAgenda) { linhaG = Object.assign({}, linhaG); delete linhaG.palette; }
+      var rg = await gravarLinha("agendas", linhaG, !!srv.agendas[agPend[gi][0]]);
+      if (rg.error && colunaCorAgenda && tabelaFaltando(rg.error)) {
+        colunaCorAgenda = false;
+        var semCorG = Object.assign({}, linhaG); delete semCorG.palette;
+        rg = await gravarLinha("agendas", semCorG, !!srv.agendas[agPend[gi][0]]);
+      }
       if (rg.error) {
         if (tabelaFaltando(rg.error)) { agendaOk = false; return; }
         // Teto de agendas estourado: tira a que o servidor recusou em vez de
@@ -5355,6 +5484,7 @@
         var l = {
           id: r.id,
           title: r.title || "Nova lista",
+          palette: r.palette || "turquesa",
           ownerId: r.owner_id,
           canEdit: minha || meuConvite[r.id] === true,
           dono: minha ? null : (donoDaLista[r.id] || null),
@@ -5412,6 +5542,7 @@
           id: r.id,
           ownerId: r.owner_id,
           title: r.title || "Nova agenda",
+          palette: r.palette || "violeta",
           canEdit: minha || !!(ac && ac.canEdit),
           dono: minha ? null : (ac ? ac.dono : null),
           createdAt: Date.parse(r.created_at) || Date.now()
