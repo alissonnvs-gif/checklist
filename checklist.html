@@ -988,7 +988,14 @@
     padding: 0; cursor: pointer;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 4px -2px rgba(56,42,28,0.6);
   }
-  .cor-criar[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 3px; }
+  /* Precisa ser box-shadow, não outline: mais abaixo existe uma regra geral
+     que zera outline em todo botão clicado com o mouse (o "sem anel azul do
+     sistema" da acessibilidade), e ela vencia esta aqui — o círculo marcava
+     a escolha por baixo dos panos (aria-pressed mudava certo) mas o anel
+     nunca aparecia na tela. */
+  .cor-criar[aria-pressed="true"] {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 4px -2px rgba(56,42,28,0.6), 0 0 0 3px var(--ink);
+  }
   /* ---------------- DIA / NOITE: sol e lua ----------------
      A bolinha acesa desliza; a cápsula fica parada. */
   .themeswitch { position: relative; }
@@ -3964,6 +3971,10 @@
 
   function linhaDaAgenda(g) {
     var linha = el("div", "catrow");
+    var p = paletteOf(g.palette);
+    linha.style.setProperty("--c1", p.c1);
+    linha.style.setProperty("--c2", p.c2);
+    linha.appendChild(el("span", "catrow-dot"));
 
     var nome = el("input", "catrow-name");
     nome.type = "text";
