@@ -5438,11 +5438,21 @@
     // busca inteira e deixar o app sem sincronizar as tarefas.
     var lists = null, items = null, shares = null, listasComigo = null;
     if (listasOk) {
+      // A cor só entra no pedido se a coluna já existiu numa tentativa
+      // anterior nesta sessão: sem isso, palette nunca vinha de volta e a
+      // cor escolhida sumia sozinha na sincronização seguinte, mesmo já
+      // salva certinho no banco.
       var ex = await Promise.all([
-        sb.from("lists").select("id,owner_id,title,sort_order,created_at"),
+        sb.from("lists").select(colunaCorLista
+          ? "id,owner_id,title,sort_order,created_at,palette"
+          : "id,owner_id,title,sort_order,created_at"),
         sb.from("list_items").select("id,list_id,qty,name,done,sort_order,created_at"),
         sb.from("list_shares").select("list_id,user_id,can_edit")
       ]);
+      if (ex[0].error && colunaCorLista && tabelaFaltando(ex[0].error)) {
+        colunaCorLista = false;
+        ex[0] = await sb.from("lists").select("id,owner_id,title,sort_order,created_at");
+      }
       var erro = ex[0].error || ex[1].error || ex[2].error;
       if (erro) {
         if (tabelaFaltando(erro)) listasOk = false;
@@ -5461,13 +5471,22 @@
     // Agenda, pelo mesmo motivo: falha aqui não pode derrubar as tarefas.
     var appts = null, listaAgendas = null, comigo = null;
     if (agendaOk) {
+      // Mesmo cuidado das listas: só pede palette se ela já se mostrou
+      // presente nesta sessão, senão a busca inteira falhava (ou, pior,
+      // a cor salva no banco nunca voltava porque nem era pedida).
       var ea = await Promise.all([
         // O RLS já devolve as minhas E as que me compartilharam.
-        sb.from("agendas").select("id,owner_id,title,sort_order,created_at"),
+        sb.from("agendas").select(colunaCorAgenda
+          ? "id,owner_id,title,sort_order,created_at,palette"
+          : "id,owner_id,title,sort_order,created_at"),
         // "*" pelo mesmo motivo do perfil: pedir uma coluna que o banco ainda
         // não tem derruba a busca inteira e leva as tarefas junto.
         sb.from("appointments").select("*")
       ]);
+      if (ea[0].error && colunaCorAgenda && tabelaFaltando(ea[0].error)) {
+        colunaCorAgenda = false;
+        ea[0] = await sb.from("agendas").select("id,owner_id,title,sort_order,created_at");
+      }
       var erroAg = ea[0].error || ea[1].error;
       if (erroAg) {
         if (tabelaFaltando(erroAg)) agendaOk = false;
