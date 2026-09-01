@@ -383,7 +383,11 @@
   }
   .notif-linha + .notif-linha { border-top: 1px solid color-mix(in srgb, var(--ink) 9%, transparent); }
   .notif-rotulo { font-size: 0.82rem; color: var(--ink); }
-  .notif-hora { width: auto; flex: none; padding: 7px 11px; cursor: pointer; }
+  /* width:auto sozinho deixava o tamanho do relógio nativo decidir — e em
+     alguns aparelhos (principalmente iOS) esse tamanho intrínseco é mais
+     estreito do que o "09:00" + o ícone precisam, então o conteúdo passava
+     para fora da pílula. Um mínimo generoso garante espaço sempre. */
+  .notif-hora { width: auto; min-width: 108px; flex: none; padding: 7px 11px; cursor: pointer; }
   .notif-chk { width: 20px; height: 20px; flex: none; accent-color: var(--ps-2); cursor: pointer; }
 
   .task-late {
