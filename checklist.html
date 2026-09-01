@@ -234,7 +234,7 @@
   .cats::-webkit-scrollbar { display: none; }
   .cat { display: flex; align-items: center; gap: 7px; flex: none; border: 0; border-radius: 999px; padding: 9px 15px; font-size: 0.72rem; font-weight: 500; letter-spacing: 0.02em; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
   .cat[aria-pressed="true"] { color: var(--ink); font-weight: 600; }
-  .cat-dot { width: 9px; height: 9px; border-radius: 3px; background: linear-gradient(150deg, var(--c1), var(--c2)); box-shadow: 0 0 7px 0 var(--c2), inset 0 1px 0 rgba(255,255,255,0.6); flex: none; }
+  .cat-dot { width: 9px; height: 9px; border-radius: 999px; background: linear-gradient(150deg, var(--c1), var(--c2)); box-shadow: 0 0 7px 0 var(--c2), inset 0 1px 0 rgba(255,255,255,0.6); flex: none; }
   .cat-dot-all { background: var(--all-conic); box-shadow: inset 0 1px 0 rgba(255,255,255,0.5); }
 
   /* ================= WEEK BAR ================= */
@@ -978,6 +978,58 @@
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 4px -2px rgba(56,42,28,0.6);
   }
   .cor-criar[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 3px; }
+  /* ---------------- DIA / NOITE: sol e lua ----------------
+     A bolinha acesa desliza; a cápsula fica parada. */
+  .themeswitch { position: relative; }
+  .th-bola {
+    position: absolute; top: 4px; left: 4px; bottom: 4px; width: calc(50% - 4px);
+    border-radius: 999px; pointer-events: none; z-index: 0;
+    background: linear-gradient(180deg, var(--laranja-claro), var(--laranja));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 10px -4px rgba(233,102,10,0.9);
+    transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  :root[data-theme="noite"] .th-bola { transform: translateX(100%); }
+  .themeswitch .th {
+    position: relative; z-index: 1; padding: 6px 13px; min-width: 40px;
+    display: grid; place-items: center; background: none; box-shadow: none; color: var(--ink-2);
+    transition: color 0.36s ease;
+  }
+  .themeswitch .th[aria-pressed="true"] { background: none; box-shadow: none; color: #FFF6EA; }
+  .themeswitch .th svg {
+    width: 15px; height: 15px; display: block;
+    fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  /* ---------------- A ACENDIDA DO TOQUE ----------------
+     Nada de quadrado nem de azul: a peça acende por dentro, na cor da casa,
+     e afunda um fio de pixel — como se tivesse sido pressionada de verdade. */
+  .newbtn:active, .cat:active, .fc:active, .th:active, .diabtn:active,
+  .minibtn:active, .btn-agendas:active, .latebtn:active, .gearbtn:active,
+  .iconbtn:active, .lamp:active, .listcard:active, .wbtn:active, .daypill:active {
+    box-shadow: inset 0 0 0 1px var(--f-rim), inset 0 -2px 14px rgba(255,180,90,0.55);
+    transform: translateY(1px);
+  }
+  .newbtn, .cat, .fc, .th, .diabtn, .minibtn, .btn-agendas, .latebtn,
+  .gearbtn, .iconbtn, .lamp, .listcard, .wbtn, .daypill {
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  /* ---------------- A ABA ATIVA FICA ACESA ----------------
+     Antes ela só ficava em negrito, o que não se enxerga de relance. */
+  .cat[aria-pressed="true"] {
+    color: #FFF6EA;
+    background: linear-gradient(180deg, var(--laranja-claro), var(--laranja));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 6px 12px -6px rgba(233,102,10,0.9);
+  }
+  /* a bolinha da aba ativa ganha um aro claro para não sumir no laranja */
+  .cat[aria-pressed="true"] .cat-dot { box-shadow: 0 0 0 1.5px rgba(255,255,255,0.85); }
+
+  /* ---------------- DIVISÓRIA DO DIA ----------------
+     Branco puro no Dia, preto puro na Noite. Só a cor de dentro muda —
+     contorno, sombra e a luz por baixo continuam iguais aos das outras peças. */
+  .diabtn { background: #FFFFFF; }
+  :root[data-theme="noite"] .diabtn { background: #000000; }
+
   /* nenhum realce azul do sistema ao tocar */
   * { -webkit-tap-highlight-color: transparent; }
   button:focus:not(:focus-visible),
@@ -1012,8 +1064,13 @@
     </div>
     <div class="top-right">
       <div class="gl gl-clear themeswitch" role="group" aria-label="Tema">
-        <button class="th" type="button" data-set="dia">Dia</button>
-        <button class="th" type="button" data-set="noite">Noite</button>
+        <span class="th-bola" aria-hidden="true"></span>
+        <button class="th" type="button" data-set="dia" aria-label="Tema claro">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.6v2.2M12 19.2v2.2M4.8 4.8l1.5 1.5M17.7 17.7l1.5 1.5M2.6 12h2.2M19.2 12h2.2M4.8 19.2l1.5-1.5M17.7 6.3l1.5-1.5"></path></svg>
+        </button>
+        <button class="th" type="button" data-set="noite" aria-label="Tema escuro">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+        </button>
       </div>
       <button class="gl gl-clear gearbtn" id="gearbtn" type="button" aria-label="Configurações" aria-expanded="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10 3.17V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -1156,7 +1213,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v31";
+  var VERSAO_APP = "v32";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
