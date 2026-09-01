@@ -569,6 +569,17 @@
   .agendasel { display: flex; gap: 3px; padding: 4px; border-radius: 999px; margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; }
   .agendasel::-webkit-scrollbar { display: none; }
   .agendasel .fc { white-space: nowrap; flex: none; }
+  /* A pastilha "aceso" (.fc[aria-pressed], regra lá em cima) sempre pinta de
+     laranja por último no CSS, então vencia a cor escolhida da agenda mesmo
+     com --fc1/--fc2 certos no elemento. Aqui dentro do seletor de agenda a
+     regra precisa de mais força pra a cor da própria agenda aparecer. */
+  .agendasel .fc[aria-pressed="true"] {
+    color: #fff;
+    background: linear-gradient(150deg, var(--fc1, var(--c1)), var(--fc2, var(--c2)));
+    box-shadow:
+      inset 0 1.5px 1px rgba(255,255,255,0.55), inset 0 0 0 1px var(--f-rim),
+      0 0 12px -2px var(--fc2, var(--c2));
+  }
 
   /* O código do convite. Grande e espaçado porque ele vai ser lido em voz
      alta ou digitado por outra pessoa — os dois pioram com dígito apertado. */
@@ -3405,6 +3416,7 @@
     conviteCodigo = null;
     compartilhando = null;
     convidados = null;
+    pendingPalette = null;
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -3424,6 +3436,9 @@
     agendas().forEach(function (g) {
       var b = el("button", "fc", g.title);
       b.type = "button";
+      var p = paletteOf(g.palette);
+      b.style.setProperty("--fc1", p.c1);
+      b.style.setProperty("--fc2", p.c2);
       b.setAttribute("aria-pressed", String(!!atual && atual.id === g.id));
       if (!ehMinha(g)) {
         b.setAttribute("aria-label", g.title + ", agenda de " + (g.dono || "outra pessoa"));
@@ -3875,6 +3890,7 @@
 
     minhasAgendas().forEach(function (g) {
       b1.appendChild(linhaDaAgenda(g));
+      if (pendingPalette === g.id) b1.appendChild(palettePicker(g));
       if (compartilhando === g.id) b1.appendChild(blocoConvite("agenda", g.id, g.title));
     });
 
@@ -3966,6 +3982,17 @@
 
     var acts = el("div", "catrow-acts");
 
+    var paint = el("button", "miniicon");
+    paint.type = "button";
+    paint.setAttribute("aria-label", "Trocar a cor de " + g.title);
+    paint.appendChild(svgPath(ICON_PAINT));
+    paint.addEventListener("click", function () {
+      pendingPalette = pendingPalette === g.id ? null : g.id;
+      compartilhando = null;
+      render();
+    });
+    acts.appendChild(paint);
+
     var comp = el("button", "miniicon");
     comp.type = "button";
     comp.setAttribute("aria-label", "Compartilhar " + g.title);
@@ -3973,6 +4000,7 @@
     comp.addEventListener("click", function () {
       if (compartilhando === g.id) { compartilhando = null; render(); return; }
       compartilhando = g.id;
+      pendingPalette = null;
       conviteCodigo = null;
       convidados = null;
       render();
