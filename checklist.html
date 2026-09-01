@@ -387,7 +387,10 @@
      alguns aparelhos (principalmente iOS) esse tamanho intrínseco é mais
      estreito do que o "09:00" + o ícone precisam, então o conteúdo passava
      para fora da pílula. Um mínimo generoso garante espaço sempre. */
-  .notif-hora { width: auto; min-width: 108px; flex: none; padding: 7px 11px; cursor: pointer; }
+  .notif-hora {
+    width: auto; min-width: 132px; min-height: 40px; flex: none;
+    padding: 7px 14px; cursor: pointer; overflow: hidden;
+  }
   .notif-chk { width: 20px; height: 20px; flex: none; accent-color: var(--ps-2); cursor: pointer; }
 
   .task-late {
@@ -1226,6 +1229,18 @@
     return PALETTES.filter(function (p) { return p.id === pid; })[0] || PALETTES[0];
   }
 
+  // .faceta-agenda tem --c1/--c2/--c-ink FIXOS no CSS (violeta) — certo para
+  // Listas, que não tem cor por agenda, mas errado aqui: a bolinha do
+  // atendimento, a faixa da semana e o resto da tela precisam da cor DESSA
+  // agenda, não da cor fixa da seção. Sem isto, só a aba lá em cima (já
+  // corrigida) mudava de cor — o resto continuava sempre violeta.
+  function aplicarCorDaAgenda(el, g) {
+    var p = paletteOf(g && g.palette);
+    el.style.setProperty("--c1", p.c1);
+    el.style.setProperty("--c2", p.c2);
+    el.style.setProperty("--c-ink", state.theme === "noite" ? p.inkNoite : p.inkDia);
+  }
+
   var OVERVIEW_ID = "overview";
   var OVERVIEW_DAYS = 7;
 
@@ -1242,7 +1257,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v34";
+  var VERSAO_APP = "v35";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -3395,6 +3410,7 @@
     elWeekSlot.appendChild(agendaWeekBar());
 
     var wrap = el("div", "faceta-agenda");
+    aplicarCorDaAgenda(wrap, agendaAtual());
     var doDia = atendimentosDe(agendaDia);
 
     if (!doDia.length) {
@@ -3468,6 +3484,7 @@
 
   function agendaWeekBar() {
     var wrap = el("section", "gl gl-clear weekbar faceta-agenda");
+    aplicarCorDaAgenda(wrap, agendaAtual());
 
     var head = el("div", "week-head");
     var lbl = el("span", "week-label");
