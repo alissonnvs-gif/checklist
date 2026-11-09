@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Checklist — sua rotina, do jeito que você organiza</title>
+<title>Checklist: sua rotina, do jeito que você organiza</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#E5E2DE">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1083,6 +1083,225 @@
   .rot-criar { font-family: "Jost", sans-serif; font-weight: 400; font-size: 0.66rem;
                letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); margin-top: 14px; }
 
+
+  /* =========================================================
+     MELHORIAS 09/11/2026 (teste das skills: só aparência, toque e movimento)
+     Bloco de sobrescrita. Tirando este bloco (e o de código do mesmo dia),
+     o visual anterior volta inteiro.
+     ========================================================= */
+
+  /* toque sem a espera do duplo toque (regra da Vercel) */
+  button, .lamp, .cat, .fc { touch-action: manipulation; }
+
+  /* alvos de toque de 44 px sem mudar o desenho (lei 2, Fitts). Medido antes:
+     bolinha 25, lápis e X 30, abas 32 de altura, engrenagem 38, setas 27. */
+  .task .lamp { overflow: visible; }
+  .task .lamp::after { display: block; content: ""; position: absolute; inset: -10px; border-radius: 50%; }
+  .task .iconbtn { width: 36px; height: 44px; margin: -7px -3px; }
+  .cats .cat::after, .themeswitch .th::after, .wbtn::after {
+    display: block; content: ""; position: absolute;
+    left: -3px; right: -3px; top: -6px; bottom: -6px; height: auto;
+    background: none; filter: none; border-radius: 999px; pointer-events: auto; z-index: 0;
+  }
+  .themeswitch .th::after { left: 0; right: 0; top: -9px; bottom: -9px; }
+  .wbtn { position: relative; }
+  .wbtn::after { left: -4px; right: -4px; top: -9px; bottom: -9px; }
+  .gearbtn::before {
+    display: block; content: ""; position: absolute; inset: -3px;
+    width: auto; height: auto; transform: none;
+    background: none; box-shadow: none; filter: none; opacity: 1; pointer-events: auto;
+  }
+  /* as duas fileiras de abas: vão maior para as áreas de toque não se sobreporem */
+  .cats { row-gap: 12px; }
+
+  /* campo com 16 px no celular: o iPhone para de dar zoom ao tocar no campo */
+  @media (pointer: coarse) {
+    .inp { font-size: 16px; }
+  }
+
+  /* contraste (medido 09/11): textos de apoio no tema claro davam 3,75 a 4,29;
+     o rodapé dava 2,34. Alvo 4,5. */
+  :root:not([data-theme="noite"]) { --ink-2: #464150; }
+  :root[data-theme="noite"] { --ink-2: #B3A99B; }
+  footer.note { opacity: 1; color: var(--ink); }
+  :root[data-theme="noite"] .latebtn-in { color: #2E1600; }
+
+  /* laranja aceso: texto escuro no lugar do branco. Branco no laranja media
+     1,7 (seção aberta) e 2,3 (Em atraso); o mínimo é 4,5. */
+  .facetas .fc[aria-pressed="true"], .themeswitch .th[aria-pressed="true"], .latebtn-in { color: #4A2402; }
+
+  /* pílula que desliza (Reels 20) */
+  .cats, .facetas { position: relative; }
+  .cats > .cat, .facetas > .fc { position: relative; z-index: 1; }
+  .pilula-voo { position: absolute; z-index: 0; pointer-events: none; will-change: clip-path; }
+  .chegando { background: transparent !important; box-shadow: none !important; }
+
+  /* formulário logo abaixo do botão: respiro antes do que vem depois */
+  .addrow + #formSlot:not(:empty) { margin: -4px 0 26px; }
+
+  /* o anel do toque de concluir */
+  .toque-anel {
+    position: absolute; inset: -1px; border-radius: 50%; pointer-events: none;
+    border: 2px solid var(--c2, var(--laranja)); opacity: 0;
+  }
+
+  /* no celular: Tarefas, Agenda e Listas embaixo, ao alcance do polegar (lei 8),
+     e o botão de criar ao lado. No computador nada muda. */
+  .fab-nova { display: none; }
+  @media (max-width: 640px) {
+    .page { padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
+    .facetarow {
+      position: fixed; z-index: 9; left: 0; right: 0; margin: 0;
+      bottom: calc(14px + env(safe-area-inset-bottom));
+      display: flex; justify-content: center; align-items: center; gap: 10px;
+      pointer-events: none;
+      transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+    }
+    .facetarow > * { pointer-events: auto; }
+    .facetas { padding: 5px; gap: 2px; }
+    .facetas .fc { min-height: 44px; min-width: 78px; padding: 0 15px; font-size: 0.8rem; }
+    .fab-nova {
+      display: grid; place-items: center; flex: none;
+      width: 56px; height: 56px; border-radius: 999px; border: 0; padding: 0; cursor: pointer;
+      color: #4A2402;
+      background: linear-gradient(180deg, var(--laranja-claro), var(--laranja));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 8px 18px -8px rgba(233,102,10,0.9);
+    }
+    .fab-nova:active { transform: translateY(1px); }
+    .fab-nova svg { width: 22px; height: 22px; display: block; }
+    .fab-nova svg path { stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; fill: none; }
+    .fab-nova[hidden] { display: none; }
+    .toast { bottom: calc(96px + env(safe-area-inset-bottom)); }
+    body.digitando .facetarow { transform: translateY(170%); opacity: 0; }
+    body.digitando .facetarow > * { pointer-events: none; }
+  }
+
+
+  /* =========================================================
+     LAYOUT DE VIDRO 09/11/2026 (Reels 22, 11 e 3; ele aprovou: "Pode montar")
+     Sobrescrita por cima da v37. Tirando este bloco e o de código do mesmo
+     nome, o app volta à v37.
+     ========================================================= */
+  :root {
+    --escuro: #221F26; --escuro-ink: #F6EFE6;
+    --lamina: rgba(255,255,255,0.78);
+    --doca-ativa: rgba(120,104,88,0.20);
+    --selo: #C2351B;
+  }
+  :root[data-theme="noite"] {
+    --escuro: #F2EBE1; --escuro-ink: #221F26;
+    --lamina: rgba(255,255,255,0.26);
+    --doca-ativa: rgba(255,255,255,0.15);
+  }
+  .chegando-tinta { color: var(--ink) !important; }
+
+  /* ícones das seções: aparecem só na doca do celular e na barra lateral */
+  .fc-ico { display: none; width: 21px; height: 21px; flex: none; }
+  .fc-ico * { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  @keyframes rotAparece { from { opacity: 0; } to { opacity: 1; } }
+
+  /* A. abas de página numa barra de vidro só, numa linha que rola de lado (Reels 22, barra de cima) */
+  .cats {
+    flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+    gap: 2px; padding: 4px; margin: 0 0 22px; border-radius: 999px;
+    background: linear-gradient(150deg, var(--sheet-a), var(--sheet-b));
+    backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: inset 0 1px 0 var(--f-top), inset 0 -1px 0 var(--f-bot), inset 0 0 0 1px var(--f-rim);
+  }
+  .cats::-webkit-scrollbar { display: none; }
+  .cats .cat { min-height: 40px; }
+  .cats .cat:not([aria-pressed="true"]) {
+    background: none; box-shadow: none; filter: none;
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .lamina-voo {
+    position: absolute; z-index: 2; pointer-events: none; background: var(--lamina);
+    backdrop-filter: blur(7px) brightness(1.06); -webkit-backdrop-filter: blur(7px) brightness(1.06);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+
+  /* B. dias da semana numa barra de vidro, com a pílula escura (Reels 22, barra do meio) */
+  .daystrip {
+    position: relative; gap: 0; padding: 4px; border-radius: 999px;
+    background: linear-gradient(180deg, var(--well-a), var(--well-b));
+    box-shadow: inset 0 1.5px 3px var(--well-in);
+  }
+  .daystrip .daypill { position: relative; z-index: 1; background: none; box-shadow: none; border-radius: 999px; }
+  .daystrip .daypill[data-today="true"], .daystrip .daypill[data-foco="true"] {
+    background: var(--escuro); color: var(--escuro-ink);
+    box-shadow: 0 6px 12px -8px rgba(30,20,10,0.6);
+  }
+  .daystrip .daypill[data-today="true"] .dp-l, .daystrip .daypill[data-foco="true"] .dp-l { color: inherit; }
+  .daystrip:has(.daypill[data-foco="true"]) .daypill[data-today="true"]:not([data-foco="true"]) {
+    background: none; box-shadow: none; color: var(--ink);
+  }
+  .daystrip:has(.daypill[data-foco="true"]) .daypill[data-today="true"]:not([data-foco="true"]) .dp-l { color: var(--c-ink, var(--ink)); }
+  .escura-voo { position: absolute; z-index: 0; pointer-events: none; border-radius: 999px; }
+
+  /* C. no celular: a doca de ícones com lente que segue o dedo (Reels 22, barra de baixo, e Reels 11),
+     e o botão de criar separado com o número de atrasos */
+  .lente-doca { display: none; }
+  .fab-nova .selo {
+    position: absolute; top: -3px; right: -3px; min-width: 20px; height: 20px; padding: 0 5px;
+    border-radius: 999px; background: var(--selo); color: #fff;
+    font-family: "Jost", sans-serif; font-size: 0.74rem; font-weight: 500; font-variant-numeric: tabular-nums;
+    display: grid; place-items: center; box-shadow: 0 0 0 2px rgba(255,255,255,0.85);
+  }
+  .fab-nova .selo[hidden] { display: none; }
+  @media (max-width: 640px) {
+    .fab-nova { position: relative; }
+    .facetas { padding: 5px; gap: 2px; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .facetas .fc {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      min-width: 52px; min-height: 48px; padding: 0 14px; font-size: 0.84rem; font-weight: 600;
+    }
+    .facetas .fc .fc-ico { display: block; }
+    .facetas .fc .fc-rot { display: none; white-space: nowrap; }
+    .facetas .fc[aria-pressed="true"] .fc-rot { display: inline; animation: rotAparece 0.2s ease 0.06s backwards; }
+    .facetas .fc[aria-pressed="true"] { background: var(--doca-ativa); box-shadow: none; color: var(--ink); }
+    .facetas .fc:not([aria-pressed="true"]) { color: var(--ink-2); }
+    .lente-doca {
+      display: block; position: absolute; z-index: 3; pointer-events: none;
+      top: -7px; bottom: -7px; left: 0; width: 74px; border-radius: 999px; opacity: 0;
+      background: radial-gradient(120% 90% at 50% 30%, rgba(255,255,255,0.28), rgba(255,255,255,0.06) 60%, rgba(255,255,255,0.16));
+      backdrop-filter: blur(1.2px) saturate(170%) contrast(1.08); -webkit-backdrop-filter: blur(1.2px) saturate(170%) contrast(1.08);
+      box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.85), inset 0 6px 10px rgba(255,255,255,0.35),
+                  inset 0 -8px 14px rgba(60,40,20,0.22), 0 8px 20px -10px rgba(40,28,16,0.6);
+    }
+  }
+
+  /* D. no computador: barra lateral de vidro com seções e páginas (Reels 3) */
+  @media (min-width: 1024px) {
+    .page {
+      display: grid; grid-template-columns: 248px minmax(0, 1fr); column-gap: 40px;
+      max-width: 1120px; align-items: start;
+    }
+    .page > * { grid-column: 2; }
+    .page > .lateral {
+      display: flex; flex-direction: column; gap: 16px;
+      grid-column: 1; grid-row: 1 / span 40; position: sticky; top: 26px;
+    }
+    .lateral .facetarow { margin: 0; display: block; }
+    .lateral .facetas { flex-direction: column; align-items: stretch; border-radius: 22px; padding: 6px; gap: 2px; }
+    .lateral .facetas .fc {
+      display: flex; align-items: center; justify-content: flex-start; gap: 11px;
+      min-height: 44px; padding: 0 14px; border-radius: 14px; font-size: 0.86rem; color: var(--ink-2);
+    }
+    .lateral .facetas .fc .fc-ico { display: block; width: 19px; height: 19px; }
+    .lateral .facetas .fc[aria-pressed="true"], .lateral .cats .cat[aria-pressed="true"] {
+      color: var(--ink);
+      background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.66));
+      box-shadow: inset 0 1px 0 #fff, 0 4px 10px -6px rgba(40,28,16,0.45);
+    }
+    :root[data-theme="noite"] .lateral .facetas .fc[aria-pressed="true"],
+    :root[data-theme="noite"] .lateral .cats .cat[aria-pressed="true"] {
+      background: rgba(255,255,255,0.16); box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
+    }
+    .lateral .cats { flex-direction: column; align-items: stretch; overflow: visible; border-radius: 22px; padding: 6px; margin: 0; }
+    .lateral .cats .cat { justify-content: flex-start; border-radius: 14px; min-height: 42px; padding: 0 14px; font-size: 0.84rem; }
+    .lateral .fab-nova { display: none; }
+  }
+
 </style>
 
 <style id="catStyles"></style>
@@ -1150,7 +1369,7 @@
   <div id="formSlot"></div>
 
   <footer class="note">
-    Salvo na sua conta e sincronizado entre seus aparelhos. O histórico de cada semana fica guardado —
+    Salvo na sua conta e sincronizado entre seus aparelhos. O histórico de cada semana fica guardado:
     navegue entre semanas sem perder o que já foi marcado.
   </footer>
 </div>
@@ -1158,14 +1377,14 @@
 <div class="authwrap" id="authwrap" hidden>
   <section class="gl gl-clear authcard">
     <h1 class="auth-title">Checklist</h1>
-    <p class="auth-sub" id="authSub">Crie sua conta uma vez. Depois é só abrir — o app te mantém dentro.</p>
+    <p class="auth-sub" id="authSub">Crie sua conta uma vez. Depois é só abrir, e o app te mantém dentro.</p>
     <form id="authForm" novalidate>
       <input class="inp auth-inp" id="authEmail" type="email" placeholder="Seu e-mail" autocomplete="email" autocapitalize="off" spellcheck="false">
       <input class="inp auth-inp" id="authPass" type="password" placeholder="Sua senha" autocomplete="current-password">
       <p class="auth-msg" id="authMsg" hidden></p>
       <button class="gl gl-white authbtn" id="authGo" type="submit">Criar conta</button>
     </form>
-    <button class="auth-switch" id="authSwitch" type="button">Já tenho conta — entrar</button>
+    <button class="auth-switch" id="authSwitch" type="button">Já tenho conta, quero entrar</button>
   </section>
 </div>
 
@@ -1261,7 +1480,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v36";
+  var VERSAO_APP = "v37";
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -1641,7 +1860,7 @@
   var elRodape = document.querySelector("footer.note");
   var RODAPE_ROTINA = elRodape ? elRodape.textContent : "";
   var RODAPE_LISTAS = "Suas listas ficam guardadas na conta e aparecem em qualquer aparelho onde você entrar.";
-  var RODAPE_AGENDA = "Cada atendimento é marcado numa data. Atendido fica no lugar, riscado — o dia inteiro continua à vista.";
+  var RODAPE_AGENDA = "Cada atendimento é marcado numa data. Atendido fica no lugar, riscado, e o dia inteiro continua à vista.";
 
   elDate.textContent = today.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 
@@ -1877,6 +2096,7 @@
     var row = el("div", "gl gl-clear task" + (opts.late ? " task-late" : ""));
     row.setAttribute("style", catVars(occ.catId));
     row.setAttribute("data-on", String(occ.done));
+    row.setAttribute("data-k", occKey(occ));
 
     var lamp = el("button", "lamp");
     lamp.type = "button";
@@ -1931,7 +2151,7 @@
         armed = true;
         del.setAttribute("data-danger", "armed");
         del.setAttribute("aria-label", "Confirmar exclusão");
-        showToast("Toque de novo pra excluir.");
+        showToast(occ.kind === "schedule" && item.days.length > 1 ? "Toque de novo pra excluir de todos os dias." : "Toque de novo pra excluir.");
         window.setTimeout(function () {
           armed = false;
           del.removeAttribute("data-danger");
@@ -1954,7 +2174,7 @@
     editingId = null;
     save();
     render();
-    showToast("Tarefa excluída.");
+    showToast(kind === "schedule" && item.days && item.days.length > 1 ? "Tarefa excluída de todos os dias." : "Tarefa excluída.");
   }
 
   /* =========================================================
@@ -2058,7 +2278,7 @@
         });
         f.appendChild(picks);
       } else {
-        f.appendChild(el("span", "field-label", "Data — sem data vai pra Resolver"));
+        f.appendChild(el("span", "field-label", "Data (sem data, vai pra Resolver)"));
         var dt = el("input", "inp");
         dt.type = "date";
         dt.value = draft.date;
@@ -2073,7 +2293,7 @@
 
     // horário
     var fTime = el("div", "field");
-    fTime.appendChild(el("span", "field-label", "Horário — opcional"));
+    fTime.appendChild(el("span", "field-label", "Horário (opcional)"));
     var inpTime = el("input", "inp");
     inpTime.type = "time";
     inpTime.value = draft.time;
@@ -2084,7 +2304,7 @@
     // detalhe (só recorrente, como na versão anterior)
     var noteBox = el("div", "field");
     noteBox.style.display = draft.kind === "schedule" ? "flex" : "none";
-    noteBox.appendChild(el("span", "field-label", "Detalhe — opcional"));
+    noteBox.appendChild(el("span", "field-label", "Detalhe (opcional)"));
     var inpNote = el("input", "inp");
     inpNote.type = "text";
     inpNote.placeholder = "Pré-definição, observação…";
@@ -2758,7 +2978,7 @@
     var box = el("div", "list");
     if (!listas().length) {
       box.appendChild(el("p", "empty",
-        "Nenhuma lista ainda. Crie a primeira no botão lá embaixo — mercado, farmácia, o que precisar."));
+        "Nenhuma lista ainda. Crie a primeira no botão Nova lista: mercado, farmácia, o que precisar."));
       return box;
     }
     listas().forEach(function (l) {
@@ -2933,7 +3153,7 @@
 
     if (!listaMinha(l)) {
       box.appendChild(el("p", "empty",
-        "Lista de " + (l.dono || "outra pessoa") + (l.canEdit ? "" : " — você só pode olhar") + "."));
+        "Lista de " + (l.dono || "outra pessoa") + (l.canEdit ? "" : ". Você só pode olhar") + "."));
     }
     if (compartilhando === l.id) box.appendChild(blocoConvite("lista", l.id, l.title));
 
@@ -2983,6 +3203,7 @@
 
     var row = el("div", "gl gl-clear task");
     row.setAttribute("data-on", String(!!it.done));
+    row.setAttribute("data-k", "item:" + it.id);
 
     var lamp = el("button", "lamp");
     lamp.type = "button";
@@ -3381,7 +3602,7 @@
   function rotuloDoDia(iso) {
     var d = new Date(iso + "T00:00:00");
     var texto = capitalize(d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }));
-    return iso === todayISO ? "Hoje — " + texto : texto;
+    return iso === todayISO ? "Hoje · " + texto : texto;
   }
 
   function irParaDia(iso) {
@@ -3790,7 +4011,7 @@
     // três contaria a quem está chutando que o número existe.
     if (erro === "invalido") return "Número inválido, já usado ou vencido. Peça outro.";
     if (erro === "proprio") return "Esse número é seu. Ele serve pra outra pessoa entrar.";
-    if (erro === "nao e sua") return "Essa agenda não é sua — só o dono convida.";
+    if (erro === "nao e sua") return "Essa agenda não é sua. Só o dono convida.";
     if (erro === "nao logado") return "Entre na sua conta primeiro.";
     return "Não deu certo. Tente de novo.";
   }
@@ -3917,7 +4138,7 @@
     b1.appendChild(el("h2", "set-title", "Suas agendas"));
     b1.appendChild(el("p", "set-help",
       "Uma por finalidade: atendimentos, pessoal, o que precisar. Toque no nome " +
-      "pra renomear. Cada agenda é compartilhada separado — quem entra numa não " +
+      "pra renomear. Cada agenda é compartilhada separado: quem entra numa não " +
       "enxerga as outras."));
 
     minhasAgendas().forEach(function (g) {
@@ -3973,7 +4194,7 @@
     b3.appendChild(el("h2", "set-title", "Entrar com um número"));
     b3.appendChild(el("p", "set-help",
       "Recebeu um número de alguém? Digite aqui. Serve tanto para agenda quanto " +
-      "para lista — o app descobre sozinho o que é."));
+      "para lista, e o app descobre sozinho o que é."));
     var inp = el("input", "inp");
     inp.type = "text";
     inp.inputMode = "numeric";
@@ -4101,7 +4322,7 @@
           ? (ehLista ? "Quem entrar com este número vai poder mexer nesta lista."
                      : "Quem entrar com este número vai poder marcar e mexer nesta agenda.")
           : "Quem entrar com este número só vai poder olhar.") +
-        " Vale 30 minutos e serve uma vez só — gerar outro apaga este."));
+        " Vale 30 minutos e serve uma vez só. Gerar outro apaga este."));
     }
 
     caixa.appendChild(el("span", "danger-msg", "Quem tem acesso"));
@@ -4298,8 +4519,8 @@
     }
     if (!ehCelular()) {
       bloco.appendChild(el("p", "set-help",
-        "Os avisos vão só para o celular, como você escolheu. Ative por lá — " +
-        "os ajustes abaixo valem para ele."));
+        "Os avisos vão só para o celular, como você escolheu. Ative por lá. " +
+        "Os ajustes abaixo valem para ele."));
       bloco.appendChild(prefsNotif());
       return bloco;
     }
@@ -4320,7 +4541,7 @@
       bloco.appendChild(el("p", "set-help",
         "Os avisos estão bloqueados para este app nas configurações do navegador, " +
         "e daqui não dá para desbloquear. Toque no cadeado ao lado do endereço, " +
-        "procure Notificações e mude para Permitir — depois volte aqui."));
+        "procure Notificações e mude para Permitir. Depois volte aqui."));
       return bloco;
     }
 
@@ -4404,7 +4625,7 @@
     var b3 = el("section", "gl gl-clear set-block");
     b3.appendChild(el("h2", "set-title", "Sua conta"));
     b3.appendChild(el("p", "set-help",
-      "Você está em " + ((currentUser && currentUser.email) || "—") +
+      "Você está em " + ((currentUser && currentUser.email) || "uma conta sem e-mail") +
       ". Suas tarefas ficam guardadas nesta conta e aparecem em qualquer aparelho onde você entrar."));
 
     if (!pendingSignOut) {
@@ -4416,7 +4637,7 @@
     } else {
       var cx = el("div", "danger-box");
       cx.appendChild(el("span", "danger-msg",
-        "Ao sair, este aparelho vai pedir e-mail e senha de novo na próxima vez. Suas tarefas continuam guardadas na conta — nada é apagado."));
+        "Ao sair, este aparelho vai pedir e-mail e senha de novo na próxima vez. Suas tarefas continuam guardadas na conta. Nada é apagado."));
       var linha = el("div", "danger-acts");
       var conf = el("button", "minibtn", "Sair mesmo assim");
       conf.type = "button";
@@ -4446,7 +4667,7 @@
     b.appendChild(el("h2", "set-title", "Diagnóstico"));
     b.appendChild(el("p", "set-help",
       "Se algo estiver estranho, tire um print daqui e me mande. " +
-      "Só aparece coisa sua — nada de outra pessoa."));
+      "Só aparece coisa sua, nada de outra pessoa."));
 
     var srv = state.srv || {};
     var L = [];
@@ -4689,7 +4910,7 @@
       garantirAgenda();
       elGreet.textContent = "Agenda";
       if (agendaTela === "agendas") {
-        elSub.textContent = "Crie, renomeie e compartilhe suas agendas — ou entre na de outra pessoa.";
+        elSub.textContent = "Crie, renomeie e compartilhe suas agendas, ou entre na de outra pessoa.";
       } else {
         // O título grande passa a ser o NOME da agenda aberta. Com várias
         // agendas, "Agenda" não dizia qual — e é justamente isso que precisa
@@ -4714,7 +4935,7 @@
       elGreet.textContent = "Listas";
       elSub.textContent = aberta
         ? "Toque no nome pra renomear. O que for comprado fica riscado, não some."
-        : "Suas listas de compras e do que mais precisar — até " + LIMITE_LISTAS + " por enquanto.";
+        : "Suas listas de compras e do que mais precisar. Até " + LIMITE_LISTAS + " por enquanto.";
       elProg.style.display = "none";
       elCats.style.display = "none";
       elWeekSlot.innerHTML = "";
@@ -5929,9 +6150,9 @@
     var novo = authMode === "signup";
     elAuthGo.textContent = novo ? "Criar conta" : "Entrar";
     elAuthSub.textContent = novo
-      ? "Crie sua conta uma vez. Depois é só abrir — o app te mantém dentro."
+      ? "Crie sua conta uma vez. Depois é só abrir, e o app te mantém dentro."
       : "Entre com a conta que você já criou. Só uma vez em cada aparelho.";
-    elAuthSwitch.textContent = novo ? "Já tenho conta — entrar" : "Ainda não tenho conta — criar";
+    elAuthSwitch.textContent = novo ? "Já tenho conta, quero entrar" : "Ainda não tenho conta, quero criar";
     elAuthPass.setAttribute("autocomplete", novo ? "new-password" : "current-password");
     authMsg("");
   }
@@ -5997,7 +6218,7 @@
   function authErrorText(err) {
     var m = ((err && (err.message || err.error_description)) || "").toLowerCase();
     if (m.indexOf("already registered") !== -1 || m.indexOf("already been registered") !== -1)
-      return "Esse e-mail já tem conta. Toque em “Já tenho conta — entrar”.";
+      return "Esse e-mail já tem conta. Toque em “Já tenho conta, quero entrar”.";
     if (m.indexOf("invalid login") !== -1 || m.indexOf("invalid credentials") !== -1)
       return "E-mail ou senha não conferem.";
     if (m.indexOf("email not confirmed") !== -1)
@@ -6078,6 +6299,451 @@
     currentUser = null;
     STORAGE_KEY = null;
     location.reload();
+  }
+
+  /* =========================================================
+     MELHORIAS 09/11/2026 (teste das skills)
+     Só aparência, toque e movimento. Nada aqui lê ou grava no servidor, e as
+     funções de dados (save, pushOnce, pullOnce, stateFromServer,
+     markServerClean) não foram tocadas. Tirar este bloco e o bloco de CSS do
+     mesmo dia devolve o app ao que era.
+     ========================================================= */
+  var reduzMovimento = window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : { matches: false };
+
+  // o aviso que aparece embaixo passa a ser lido pelo leitor de tela
+  elToast.setAttribute("role", "status");
+  elToast.setAttribute("aria-live", "polite");
+
+  /* ---- pílula que desliza até a aba nova (Reels 20, "Sliding Pill"):
+     medido no vídeo 270 a 370 ms, estica até 3x no caminho, não passa do alvo. */
+  var pilulaAntes = { cats: null, facetas: null, dias: null };
+
+  function retanguloEm(cont, e) {
+    var c = cont.getBoundingClientRect(), r = e.getBoundingClientRect();
+    var l = r.left - c.left + cont.scrollLeft, t = r.top - c.top + cont.scrollTop;
+    return { l: l, t: t, r: l + r.width, b: t + r.height };
+  }
+
+  function voarPilula(cont, ativo, de, para) {
+    [].slice.call(cont.querySelectorAll(".pilula-voo")).forEach(function (v) { v.remove(); });
+    var cs = getComputedStyle(ativo);
+    var L = Math.min(de.l, para.l), T = Math.min(de.t, para.t);
+    var R = Math.max(de.r, para.r), B = Math.max(de.b, para.b);
+    var v = document.createElement("span");
+    v.className = "pilula-voo";
+    v.setAttribute("aria-hidden", "true");
+    v.style.left = L + "px"; v.style.top = T + "px";
+    v.style.width = (R - L) + "px"; v.style.height = (B - T) + "px";
+    v.style.backgroundImage = cs.backgroundImage;
+    v.style.backgroundColor = cs.backgroundColor;
+    function recorte(x) {
+      return "inset(" + (x.t - T) + "px " + (R - x.r) + "px " + (B - x.b) + "px " + (x.l - L) + "px round 999px)";
+    }
+    // a frente sai antes e a traseira vem depois: no meio do caminho a pílula estica
+    var direita = para.l + para.r > de.l + de.r;
+    var teto = 3 * Math.max(de.r - de.l, para.r - para.l);
+    var meio = { t: de.t + 0.5 * (para.t - de.t), b: de.b + 0.5 * (para.b - de.b) };
+    if (direita) {
+      meio.r = de.r + 0.82 * (para.r - de.r); meio.l = de.l + 0.22 * (para.l - de.l);
+      if (meio.r - meio.l > teto) meio.l = meio.r - teto;
+    } else {
+      meio.l = de.l + 0.82 * (para.l - de.l); meio.r = de.r + 0.22 * (para.r - de.r);
+      if (meio.r - meio.l > teto) meio.r = meio.l + teto;
+    }
+    v.style.clipPath = recorte(para);
+    cont.insertBefore(v, cont.firstChild);
+    ativo.classList.add("chegando");
+    var anim = v.animate([
+      { clipPath: recorte(de), offset: 0 },
+      { clipPath: recorte(meio), offset: 0.42 },
+      { clipPath: recorte(para), offset: 1 }
+    ], { duration: 320, easing: "cubic-bezier(0.3, 0.7, 0.2, 1)" });
+    function fim() { v.remove(); ativo.classList.remove("chegando"); }
+    anim.onfinish = fim;
+    anim.oncancel = fim;
+  }
+
+  function acompanharPilula(nome, cont, chave, seletor) {
+    if (!cont || !cont.offsetParent) { pilulaAntes[nome] = null; return; }
+    var ativo = cont.querySelector(seletor || '[aria-pressed="true"]');
+    if (!ativo) { pilulaAntes[nome] = null; return; }
+    var agora = { k: chave(ativo), r: retanguloEm(cont, ativo) };
+    var antes = pilulaAntes[nome];
+    pilulaAntes[nome] = agora;
+    if (!antes || antes.k === agora.k || reduzMovimento.matches || !ativo.animate) return;
+    var voo = (typeof vooEspecial === "object" && vooEspecial[nome]) ? vooEspecial[nome]() : null;
+    (voo || voarPilula)(cont, ativo, antes.r, agora.r);
+  }
+  window.addEventListener("resize", function () { pilulaAntes.cats = null; pilulaAntes.facetas = null; });
+
+  /* ---- toque de concluir (Reels 20, "Icon Fill"): no vídeo a cor troca em
+     100 a 170 ms e termina por volta de 400 ms com um pulo de tamanho. */
+  var toqueK = null;
+  document.addEventListener("click", function (e) {
+    var lamp = e.target && e.target.closest ? e.target.closest(".lamp") : null;
+    var row = lamp ? lamp.closest(".task") : null;
+    toqueK = row && row.getAttribute("data-k") ? row.getAttribute("data-k") : null;
+  }, true);
+
+  function animarToque() {
+    if (!toqueK) return;
+    var k = toqueK;
+    toqueK = null;
+    var sel = '.task[data-k="' + (window.CSS && CSS.escape ? CSS.escape(k) : k) + '"]';
+    [].slice.call(document.querySelectorAll(sel)).forEach(function (row) {
+      var lamp = row.querySelector(".lamp");
+      if (!lamp || !lamp.animate) return;
+      var feito = row.getAttribute("data-on") === "true";
+      if (feito && navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+      if (reduzMovimento.matches) return;
+      if (!feito) {
+        lamp.animate([{ transform: "scale(1)" }, { transform: "scale(0.86)", offset: 0.4 }, { transform: "scale(1)" }],
+          { duration: 220, easing: "ease-out" });
+        return;
+      }
+      lamp.animate([
+        { transform: "scale(1)" }, { transform: "scale(1.24)", offset: 0.38 },
+        { transform: "scale(0.96)", offset: 0.72 }, { transform: "scale(1)" }
+      ], { duration: 420, easing: "ease-out" });
+      var anel = document.createElement("span");
+      anel.className = "toque-anel";
+      anel.setAttribute("aria-hidden", "true");
+      lamp.appendChild(anel);
+      anel.animate([{ transform: "scale(1)", opacity: 0.75 }, { transform: "scale(2.2)", opacity: 0 }],
+        { duration: 460, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }).onfinish = function () { anel.remove(); };
+      var risco = lamp.querySelector(".tick path");
+      if (risco) risco.animate([{ strokeDashoffset: 20, opacity: 1 }, { strokeDashoffset: 0, opacity: 1 }],
+        { duration: 300, delay: 60, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "backwards" });
+    });
+  }
+
+  /* ---- o formulário abre logo abaixo do botão que o abriu (lei 4, proximidade).
+     Antes ele abria no fim da página: 2.700 px abaixo do botão no celular. */
+  var origemBaixo = false, formEstavaAberto = false;
+  elNewBtnBaixo.addEventListener("click", function () { origemBaixo = true; }, true);
+  function posicionarForm() {
+    if (!formOpen) { origemBaixo = false; formEstavaAberto = false; return; }
+    var ancora = origemBaixo ? elAddRowBaixo : elAddRow;
+    if (ancora.nextElementSibling !== elFormSlot) ancora.after(elFormSlot);
+    var primeiro = elFormSlot.firstElementChild;
+    if (!formEstavaAberto && primeiro && primeiro.animate && !reduzMovimento.matches) {
+      primeiro.animate([{ opacity: 0, transform: "translateY(-8px)" }, { opacity: 1, transform: "none" }],
+        { duration: 220, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+    }
+    formEstavaAberto = true;
+  }
+
+  /* ---- botão de criar ao alcance do polegar no celular (lei 8) */
+  var fab = document.createElement("button");
+  fab.type = "button";
+  fab.className = "fab-nova";
+  fab.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5 V19 M5 12 H19"></path></svg>';
+  elFacetaRow.appendChild(fab);
+  fab.addEventListener("click", function () {
+    if (!formOpen) elNewBtn.click();
+    var campo = elFormSlot.querySelector(".inp");
+    if (campo) {
+      campo.focus();
+      campo.scrollIntoView({ block: "center", behavior: reduzMovimento.matches ? "auto" : "smooth" });
+    }
+  });
+  function atualizarFab() {
+    fab.hidden = !!(settingsOpen || elAddRow.style.display === "none" || formOpen);
+    fab.setAttribute("aria-label", elNewLabel.textContent || "Novo");
+  }
+
+  // com o teclado do celular aberto, a barra de baixo sai da frente do campo
+  function ehCampo(e) { return !!(e && e.matches && e.matches("input, textarea, select, [contenteditable]")); }
+  document.addEventListener("focusin", function (e) { if (ehCampo(e.target)) document.body.classList.add("digitando"); });
+  document.addEventListener("focusout", function () {
+    window.setTimeout(function () {
+      if (!ehCampo(document.activeElement)) document.body.classList.remove("digitando");
+    }, 60);
+  });
+
+  /* ---- atalhos no computador: N cria, Esc fecha, setas trocam de página
+     (o deslizar do celular ganha o equivalente no teclado) */
+  elNewBtn.title = "Atalho no teclado: N";
+  document.addEventListener("keydown", function (e) {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || !currentUser) return;
+    if (e.key === "Escape") {
+      if (formOpen) { e.preventDefault(); elNewBtn.click(); elNewBtn.focus(); return; }
+      if (editingId || itemEditando || atendEditando) {
+        e.preventDefault();
+        editingId = null; itemEditando = null; atendEditando = null; draft = null;
+        render();
+      }
+      return;
+    }
+    if (ehCampo(e.target) || settingsOpen) return;
+    if ((e.key === "n" || e.key === "N") && !formOpen && elAddRow.style.display !== "none") {
+      e.preventDefault();
+      elNewBtn.click();
+      return;
+    }
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && state.faceta === "checklist" && !formOpen && !editingId) {
+      var ids = [OVERVIEW_ID].concat(allCatIds());
+      var i = ids.indexOf(state.activeTab) + (e.key === "ArrowRight" ? 1 : -1);
+      if (i < 0 || i >= ids.length) return;
+      e.preventDefault();
+      state.activeTab = ids[i];
+      editingId = null; formOpen = false; draft = null;
+      save();
+      render();
+    }
+  });
+
+  /* ---- ganchos: depois de cada desenho da tela, rodam os efeitos acima.
+     render() e renderForm() continuam os mesmos; só ganham um "depois". */
+  var renderBase = render;
+  render = function () { renderBase(); depoisDoRender(); };
+  var renderFormBase = renderForm;
+  renderForm = function () { renderFormBase(); posicionarForm(); atualizarFab(); };
+  function depoisDoRender() {
+    acompanharPilula("cats", elCats, function (b) { return b.textContent; });
+    acompanharPilula("facetas", elFacetaRow.querySelector(".facetas"), function (b) { return b.getAttribute("data-faceta"); });
+    animarToque();
+    atualizarFab();
+  }
+
+  /* =========================================================
+     LAYOUT DE VIDRO 09/11/2026 (Reels 22, 11 e 3)
+     Por cima da v37. Só aparência, toque e movimento: nada aqui grava
+     no servidor nem mexe nas funções de dados.
+     ========================================================= */
+  var vooEspecial = {};
+  function ehDesktop() { return document.body.classList.contains("com-lateral"); }
+
+  // ícones das seções (traço no estilo Lucide); o nome continua para o leitor de tela
+  var ICONES_FC = {
+    checklist: '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 12.2l2.7 2.7L16.2 9"/>',
+    agenda: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+    listas: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>'
+  };
+  [].slice.call(elFacetaRow.querySelectorAll(".fc")).forEach(function (b) {
+    var nome = b.textContent.trim(), f = b.getAttribute("data-faceta");
+    if (!ICONES_FC[f]) return;
+    b.textContent = "";
+    b.insertAdjacentHTML("afterbegin", '<svg class="fc-ico" viewBox="0 0 24 24" aria-hidden="true">' + ICONES_FC[f] + '</svg>');
+    var rot = document.createElement("span");
+    rot.className = "fc-rot";
+    rot.textContent = nome;
+    b.appendChild(rot);
+    b.setAttribute("aria-label", nome);
+  });
+
+  /* ---- A. lâmina fosca nas abas (Reels 22, barra de cima): medido no vídeo ~270 ms,
+     vira um fio na borda aos ~130 ms e abre na aba nova; o nome fica borrado por baixo. */
+  function voarLamina(cont, ativo, de, para) {
+    [].slice.call(cont.querySelectorAll(".lamina-voo, .pilula-voo")).forEach(function (v) { v.remove(); });
+    var direita = para.l > de.l, fio = 5;
+    var t = Math.min(de.t, para.t), b = Math.max(de.b, para.b);
+    var L = Math.min(de.l, para.l), R = Math.max(de.r, para.r);
+    var sai = direita ? de.r : de.l, entra = direita ? para.l : para.r;
+    var f1 = direita ? { l: sai - fio, r: sai } : { l: sai, r: sai + fio };
+    var f2 = direita ? { l: entra, r: entra + fio } : { l: entra - fio, r: entra };
+    function rec(x) {
+      return "inset(" + (x.t - t) + "px " + (R - x.r) + "px " + (b - x.b) + "px " + (x.l - L) + "px round 999px)";
+    }
+    var v = document.createElement("span");
+    v.className = "lamina-voo";
+    v.setAttribute("aria-hidden", "true");
+    v.style.left = L + "px"; v.style.top = t + "px";
+    v.style.width = (R - L) + "px"; v.style.height = (b - t) + "px";
+    cont.appendChild(v);
+    ativo.classList.add("chegando");
+    var a = v.animate([
+      { clipPath: rec({ l: de.l, r: de.r, t: de.t, b: de.b }), offset: 0 },
+      { clipPath: rec({ l: f1.l, r: f1.r, t: t, b: b }), offset: 0.48 },
+      { clipPath: rec({ l: f2.l, r: f2.r, t: t, b: b }), offset: 0.56 },
+      { clipPath: rec({ l: para.l, r: para.r, t: para.t, b: para.b }), offset: 1 }
+    ], { duration: 270, easing: "linear" });
+    function fim() { v.remove(); ativo.classList.remove("chegando"); }
+    a.onfinish = fim; a.oncancel = fim;
+  }
+  vooEspecial.cats = function () { return ehDesktop() ? null : voarLamina; };
+
+  // a fila de abas rola de lado: a aba aberta sempre aparece inteira
+  function mostrarAbaAtiva() {
+    if (ehDesktop() || !elCats.offsetParent) return;
+    var a = elCats.querySelector('[aria-pressed="true"]');
+    if (!a) return;
+    var esq = a.offsetLeft - 8, dir = a.offsetLeft + a.offsetWidth + 8, jeito = reduzMovimento.matches ? "auto" : "smooth";
+    if (esq < elCats.scrollLeft) elCats.scrollTo({ left: esq, behavior: jeito });
+    else if (dir > elCats.scrollLeft + elCats.clientWidth) elCats.scrollTo({ left: dir - elCats.clientWidth, behavior: jeito });
+  }
+
+  /* ---- B. pílula escura nos dias (Reels 22, barra do meio): medido no vídeo, a frente faz
+     57% do caminho em 133 ms, 90% em 330 ms e 98% em 500 ms; assenta em ~700 ms. */
+  var PASSOS_ESCURA = [[0, 0, 0], [0.19, 0.57, 0.19], [0.29, 0.76, 0.43], [0.48, 0.90, 0.70], [0.71, 0.98, 0.89], [1, 1, 1]];
+  function voarEscura(cont, ativo, de, para) {
+    [].slice.call(cont.querySelectorAll(".escura-voo")).forEach(function (v) { v.remove(); });
+    var cor = getComputedStyle(ativo).backgroundColor;
+    var L = Math.min(de.l, para.l), R = Math.max(de.r, para.r), T = Math.min(de.t, para.t), B = Math.max(de.b, para.b);
+    var v = document.createElement("span");
+    v.className = "escura-voo";
+    v.setAttribute("aria-hidden", "true");
+    v.style.left = L + "px"; v.style.top = T + "px";
+    v.style.width = (R - L) + "px"; v.style.height = (B - T) + "px";
+    v.style.background = cor;
+    cont.insertBefore(v, cont.firstChild);
+    ativo.classList.add("chegando", "chegando-tinta");
+    window.setTimeout(function () { ativo.classList.remove("chegando-tinta"); }, 260);
+    var direita = para.l > de.l;
+    var k = PASSOS_ESCURA.map(function (p) {
+      var frente = p[1], tras = p[2], x;
+      if (direita) x = { l: de.l + tras * (para.l - de.l), r: de.r + frente * (para.r - de.r) };
+      else x = { l: de.l + frente * (para.l - de.l), r: de.r + tras * (para.r - de.r) };
+      x.t = de.t + frente * (para.t - de.t); x.b = de.b + frente * (para.b - de.b);
+      return { clipPath: "inset(" + (x.t - T) + "px " + (R - x.r) + "px " + (B - x.b) + "px " + (x.l - L) + "px round 999px)", offset: p[0] };
+    });
+    var a = v.animate(k, { duration: 700, easing: "linear" });
+    function fim() { v.remove(); ativo.classList.remove("chegando", "chegando-tinta"); }
+    a.onfinish = fim; a.oncancel = fim;
+  }
+  vooEspecial.dias = function () { return voarEscura; };
+
+  // nas tarefas, tocar num dia rola até ele: a pílula escura vai junto e marca o dia em foco
+  elWeekSlot.addEventListener("click", function (e) {
+    var p = e.target && e.target.closest ? e.target.closest(".daystrip .daypill") : null;
+    if (!p || state.faceta !== "checklist") return;
+    var strip = p.parentNode;
+    var atual = strip.querySelector('.daypill[data-foco="true"]') || strip.querySelector('.daypill[data-today="true"]');
+    if (atual === p) return;
+    var de = atual ? retanguloEm(strip, atual) : null, para = retanguloEm(strip, p);
+    [].slice.call(strip.querySelectorAll(".daypill[data-foco]")).forEach(function (x) { x.removeAttribute("data-foco"); });
+    p.setAttribute("data-foco", "true");
+    if (de && !reduzMovimento.matches && p.animate) voarEscura(strip, p, de, para);
+  }, true);
+
+  /* ---- C. doca do celular: lente de vidro que segue o dedo (Reels 22 e 11): no vídeo a
+     lente alcança o dedo em ~100 ms e, ao soltar, vira a pílula do item em ~130 ms. */
+  var mqDoca = window.matchMedia ? window.matchMedia("(max-width: 640px)") : { matches: false };
+  var facetasEl = elFacetaRow.querySelector(".facetas");
+  var lenteDoca = document.createElement("span");
+  lenteDoca.className = "lente-doca";
+  lenteDoca.setAttribute("aria-hidden", "true");
+  facetasEl.appendChild(lenteDoca);
+  var dl = { segurando: false, arrastando: false, x0: 0, xAlvo: 0, x: 0, laco: 0, larg: 74 };
+  function botoesDoca() { return [].slice.call(facetasEl.querySelectorAll(".fc")).filter(function (b) { return b.offsetParent; }); }
+  function xNaDoca(ev) {
+    var c = facetasEl.getBoundingClientRect();
+    return Math.max(dl.larg / 2 - 6, Math.min(c.width - dl.larg / 2 + 6, ev.clientX - c.left));
+  }
+  function quadroLente() {
+    dl.x += (dl.xAlvo - dl.x) * 0.3;
+    lenteDoca.style.transform = "translateX(" + (dl.x - dl.larg / 2) + "px)";
+    if (dl.segurando) dl.laco = requestAnimationFrame(quadroLente);
+  }
+  facetasEl.addEventListener("pointerdown", function (ev) {
+    if (!mqDoca.matches || reduzMovimento.matches || !lenteDoca.animate || ehDesktop()) return;
+    var ativo = facetasEl.querySelector('.fc[aria-pressed="true"]');
+    if (!ativo) return;
+    dl.segurando = true; dl.arrastando = false; dl.x0 = ev.clientX;
+    var r = retanguloEm(facetasEl, ativo);
+    dl.x = (r.l + r.r) / 2; dl.xAlvo = xNaDoca(ev);
+    lenteDoca.getAnimations().forEach(function (a) { a.cancel(); });
+    lenteDoca.animate([{ opacity: 0, scale: "0.7" }, { opacity: 1, scale: "1" }], { duration: 120, easing: "ease-out", fill: "forwards" });
+    cancelAnimationFrame(dl.laco);
+    dl.laco = requestAnimationFrame(quadroLente);
+  });
+  facetasEl.addEventListener("pointermove", function (ev) {
+    if (!dl.segurando) return;
+    if (!dl.arrastando && Math.abs(ev.clientX - dl.x0) > 8) {
+      dl.arrastando = true;
+      try { facetasEl.setPointerCapture(ev.pointerId); } catch (e) {}
+    }
+    dl.xAlvo = xNaDoca(ev);
+  });
+  function soltarLente(ev) {
+    if (!dl.segurando) return;
+    dl.segurando = false;
+    cancelAnimationFrame(dl.laco);
+    var xIni = dl.x, xFim = dl.x;
+    if (dl.arrastando && ev.type === "pointerup") {
+      var c = facetasEl.getBoundingClientRect(), x = ev.clientX - c.left, alvo = null, dist = 1e9;
+      botoesDoca().forEach(function (b) {
+        var r = retanguloEm(facetasEl, b), d = Math.abs((r.l + r.r) / 2 - x);
+        if (d < dist) { dist = d; alvo = b; }
+      });
+      if (alvo && alvo.getAttribute("aria-pressed") !== "true") { pilulaAntes.facetas = null; alvo.click(); }
+      var foco = facetasEl.querySelector('.fc[aria-pressed="true"]');
+      if (foco) { var rf = retanguloEm(facetasEl, foco); xFim = (rf.l + rf.r) / 2; }
+    }
+    lenteDoca.getAnimations().forEach(function (a) { a.cancel(); });
+    lenteDoca.animate([
+      { transform: "translateX(" + (xIni - dl.larg / 2) + "px)", opacity: 1, scale: "1" },
+      { transform: "translateX(" + (xFim - dl.larg / 2) + "px)", opacity: 0, scale: "0.82" }
+    ], { duration: 130, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "forwards" });
+  }
+  facetasEl.addEventListener("pointerup", soltarLente);
+  facetasEl.addEventListener("pointercancel", soltarLente);
+  // arrastar na doca não pode virar o deslizar de página
+  ["touchstart", "touchend"].forEach(function (t) {
+    elFacetaRow.addEventListener(t, function (e) { e.stopPropagation(); }, { passive: true });
+  });
+
+  // o número vermelho no botão de criar: quantas tarefas estão em atraso (a mesma conta da faixa)
+  var selo = document.createElement("span");
+  selo.className = "selo";
+  selo.setAttribute("aria-hidden", "true");
+  selo.hidden = true;
+  fab.appendChild(selo);
+  var atualizarFabV37 = atualizarFab;
+  atualizarFab = function () {
+    atualizarFabV37();
+    var n = 0;
+    try { if (currentUser && state && state.faceta === "checklist" && !settingsOpen) n = overdueOccurrences(allCatIds()).length; } catch (e) { n = 0; }
+    selo.hidden = !n;
+    selo.textContent = n > 99 ? "99+" : String(n);
+    // só nas Tarefas: na Agenda e nas Listas o botão cria outra coisa, e o número confundiria
+    if (n) fab.setAttribute("aria-label", (elNewLabel.textContent || "Novo") + " (" + n + " em atraso)");
+  };
+
+  /* ---- D. computador: barra lateral com as seções e as páginas (Reels 3) */
+  var mqLateral = window.matchMedia ? window.matchMedia("(min-width: 1024px)") : { matches: false };
+  var paginaEl = document.querySelector(".page");
+  var lateral = document.createElement("aside");
+  lateral.className = "lateral";
+  lateral.setAttribute("aria-label", "Navegação");
+  var marcaFaceta = document.createComment(" lugar da faixa de seções ");
+  var marcaCats = document.createComment(" lugar das abas ");
+  elFacetaRow.parentNode.insertBefore(marcaFaceta, elFacetaRow);
+  elCats.parentNode.insertBefore(marcaCats, elCats);
+  function arrumarLateral() {
+    if (mqLateral.matches) {
+      if (!lateral.parentNode) paginaEl.insertBefore(lateral, paginaEl.firstChild);
+      lateral.appendChild(elFacetaRow);
+      lateral.appendChild(elCats);
+      document.body.classList.add("com-lateral");
+    } else {
+      marcaFaceta.parentNode.insertBefore(elFacetaRow, marcaFaceta.nextSibling);
+      marcaCats.parentNode.insertBefore(elCats, marcaCats.nextSibling);
+      if (lateral.parentNode) lateral.parentNode.removeChild(lateral);
+      document.body.classList.remove("com-lateral");
+    }
+    pilulaAntes.cats = null; pilulaAntes.facetas = null; pilulaAntes.dias = null;
+  }
+  if (mqLateral.addEventListener) mqLateral.addEventListener("change", arrumarLateral);
+  else if (mqLateral.addListener) mqLateral.addListener(arrumarLateral);
+  arrumarLateral();
+
+  /* ---- gancho: depois de cada desenho da tela */
+  var renderV37 = render;
+  render = function () {
+    var rolagem = elCats.scrollLeft;
+    renderV37();
+    elCats.scrollLeft = rolagem;
+    depoisDoRenderVidro();
+  };
+  function depoisDoRenderVidro() {
+    var strip = elWeekSlot.querySelector(".daystrip");
+    acompanharPilula("dias", strip, function (b) {
+      return state.faceta + ":" + [].indexOf.call(strip.querySelectorAll(".daypill"), b);
+    }, '.daypill[data-today="true"]');
+    mostrarAbaAtiva();
   }
 
   /* =========================================================
