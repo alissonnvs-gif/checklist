@@ -1302,6 +1302,49 @@
     .lateral .fab-nova { display: none; }
   }
 
+  /* =========================================================
+     APPS DE EMPRESA 20/11/2026
+     A faixa que diz "você está no app de tal empresa" e os blocos da
+     seção Apps compartilhados. Usa as cores da casa: tinta escura no Dia,
+     clara na Noite. O âmbar continua reservado à navegação e ao Em atraso.
+     ========================================================= */
+  .faixa-espelho {
+    position: sticky; top: calc(10px + env(safe-area-inset-top)); z-index: 30;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin: 0 0 18px; padding: 6px 6px 6px 16px; border-radius: 18px;
+    background: color-mix(in srgb, var(--ink) 92%, transparent); color: #FBF8F4;
+    box-shadow: 0 12px 26px -16px rgba(20, 14, 8, 0.75);
+    font-family: "Inter", sans-serif; font-size: 0.86rem; line-height: 1.3;
+  }
+  :root[data-theme="noite"] .faixa-espelho { color: #17131D; }
+  .faixa-espelho .fe-txt { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .faixa-espelho small { font-size: 0.72rem; opacity: 0.78; letter-spacing: 0.01em; }
+  .faixa-espelho b {
+    font-family: "Poppins", sans-serif; font-weight: 600; font-size: 0.95rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .faixa-espelho .fe-volta {
+    flex: none; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; cursor: pointer;
+    font: 600 0.8rem "Inter", sans-serif; color: inherit;
+    background: rgba(255, 255, 255, 0.14); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38);
+  }
+  :root[data-theme="noite"] .faixa-espelho .fe-volta {
+    background: rgba(0, 0, 0, 0.06); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+  }
+  .empresa-linha { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+  .empresa-linha + .empresa-linha { border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); }
+  .empresa-linha .task-title { flex: 1; min-width: 0; }
+  .empresa-rot { display: block; margin: 14px 0 6px; font-size: 0.8rem; font-weight: 600; color: var(--ink-2); }
+  .empresa-area { width: 100%; min-height: 92px; resize: vertical; font-family: inherit; line-height: 1.45; }
+  .empresa-link { width: 100%; font-family: "Jost", sans-serif; font-size: 0.82rem; }
+  .empresa-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  /* Com o quarto botão na barra de baixo, um celular estreito (360 px) não
+     comportava "Apps compartilhados" aceso: passava 3 px de cada lado. Só
+     nesse caso o recheio dos botões encolhe; o toque continua com 48 px. */
+  @media (max-width: 400px) {
+    .facetas.com-empresas .fc { padding: 0 11px; min-width: 48px; }
+  }
+
 </style>
 
 <style id="catStyles"></style>
@@ -1338,6 +1381,7 @@
       <button class="fc" type="button" data-faceta="checklist">Tarefas</button>
       <button class="fc" type="button" data-faceta="agenda">Agenda</button>
       <button class="fc" type="button" data-faceta="listas">Listas</button>
+      <button class="fc" type="button" data-faceta="empresas" style="display:none">Apps compartilhados</button>
     </div>
   </div>
 
@@ -1480,7 +1524,30 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v37";
+  var VERSAO_APP = "v38";
+
+  /* ---- apps de empresa (20/11/2026) ----
+     checklist.html?espelho=<conta> abre o app de uma empresa que esta conta
+     acompanha (só o consultor dela consegue: o banco confere em toda
+     chamada). checklist.html?empresa=<link> é o link que a empresa abre para
+     nascer configurada e ligada ao consultor. Ver supabase/14_empresas.sql. */
+  var PARAMS_URL = new URLSearchParams(location.search);
+  var ESPELHO = (function () {
+    var v = (PARAMS_URL.get("espelho") || "").toLowerCase();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v) ? v : null;
+  })();
+  var CONVITE_EMPRESA_KEY = "checklist_convite_empresa";
+  var CONSULTOR_KEY = "checklist_consultor_";
+  // O link de empresa é guardado já na abertura: entre abrir o link e
+  // terminar de criar a conta, a página pode recarregar e perder o endereço.
+  (function () {
+    var t = (PARAMS_URL.get("empresa") || "").toLowerCase();
+    if (/^[0-9a-f]{32}$/.test(t)) { try { localStorage.setItem(CONVITE_EMPRESA_KEY, t); } catch (e) {} }
+  })();
+  var souConsultor = false;       // esta conta acompanha empresas (vem do servidor)
+  var empresaDoEspelho = "";      // nome da empresa aberta no espelho
+  var meuConsultor = null;        // do lado da empresa: quem acompanha este app
+  var PULL_ESPELHO_MS = 20000;    // no espelho não há tempo real: busca a cada 20 s
 
   // JS getDay(): 0=Dom, 1=Seg, ... 6=Sáb. Exibido Seg→Dom.
   var WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -1704,7 +1771,7 @@
         if (!it.createdAt) it.createdAt = Date.now();
       });
     });
-    if (parsed.faceta !== "listas" && parsed.faceta !== "agenda") parsed.faceta = "checklist";
+    if (parsed.faceta !== "listas" && parsed.faceta !== "agenda" && parsed.faceta !== "empresas") parsed.faceta = "checklist";
     delete parsed.syncMeta;
     delete parsed.syncKnownIds;
     if (!parsed.overviewSeen) { parsed.activeTab = OVERVIEW_ID; parsed.overviewSeen = true; }
@@ -2822,6 +2889,9 @@
   function renderForm() {
     elFormSlot.innerHTML = "";
     elNewBtn.setAttribute("aria-expanded", String(formOpen));
+    // Em Apps compartilhados não existe "criar": o botão some e nenhum
+    // formulário nasce, nem pelo atalho N do teclado.
+    if (state.faceta === "empresas") { elAddRow.style.display = "none"; elAddRowBaixo.hidden = true; return; }
     // A cópia de baixo existe só DENTRO de uma lista: é lá que a rolagem
     // até o fim incomodava. Nas outras telas ela seria repetição à toa.
     var listaEmAberto = state.faceta === "listas" && listaAberta ? listaDe(listaAberta) : null;
@@ -3128,19 +3198,23 @@
 
     // Compartilhar e excluir são do dono, mesmo quando o convidado pode editar.
     if (listaMinha(l)) {
-      var comp = el("button", "miniicon");
-      comp.type = "button";
-      comp.setAttribute("aria-label", "Compartilhar " + l.title);
-      comp.appendChild(svgPath(ICON_COMPARTILHAR));
-      comp.addEventListener("click", function () {
-        if (compartilhando === l.id) { compartilhando = null; render(); return; }
-        compartilhando = l.id;
-        conviteCodigo = null;
-        convidados = null;
-        render();
-        carregarConvidadosLista(l.id);
-      });
-      head.appendChild(comp);
+      // No app de uma empresa o convite por número não serve: ele sairia em
+      // nome de quem está mexendo, não da empresa. Excluir continua.
+      if (!ESPELHO) {
+        var comp = el("button", "miniicon");
+        comp.type = "button";
+        comp.setAttribute("aria-label", "Compartilhar " + l.title);
+        comp.appendChild(svgPath(ICON_COMPARTILHAR));
+        comp.addEventListener("click", function () {
+          if (compartilhando === l.id) { compartilhando = null; render(); return; }
+          compartilhando = l.id;
+          conviteCodigo = null;
+          convidados = null;
+          render();
+          carregarConvidadosLista(l.id);
+        });
+        head.appendChild(comp);
+      }
 
       var apagar = el("button", "miniicon");
       apagar.type = "button";
@@ -4210,7 +4284,7 @@
       if (e.key === "Enter") { e.preventDefault(); entrar.click(); }
     });
     b3.appendChild(entrar);
-    wrap.appendChild(b3);
+    if (!ESPELHO) wrap.appendChild(b3);
 
     return wrap;
   }
@@ -4263,7 +4337,7 @@
       render();
       carregarConvidados("agenda", g.id);
     });
-    acts.appendChild(comp);
+    if (!ESPELHO) acts.appendChild(comp);
 
     // A última agenda não pode ser excluída: sem nenhuma não existe onde
     // marcar atendimento, e o app criaria outra na hora seguinte.
@@ -4569,6 +4643,9 @@
   function renderSettings() {
     elBody.innerHTML = "";
     var wrap = el("div", "settings");
+    // No app de uma empresa: nome, avisos e conta são DELA e não se mexem
+    // daqui. Ficam as abas e o diagnóstico.
+    if (ESPELHO) wrap.appendChild(blocoEspelhoConfig());
 
     /* --- nome --- */
     var b1 = el("section", "gl gl-clear set-block");
@@ -4588,12 +4665,14 @@
       save(true);
     });
     b1.appendChild(inpName);
-    wrap.appendChild(b1);
+    if (!ESPELHO) wrap.appendChild(b1);
 
     /* --- abas --- */
     var b2 = el("section", "gl gl-clear set-block");
-    b2.appendChild(el("h2", "set-title", "Suas abas"));
-    b2.appendChild(el("p", "set-help", "Crie as abas da sua rotina. Toque no nome pra renomear, no pincel pra trocar a cor, e nas setas pra reordenar."));
+    b2.appendChild(el("h2", "set-title", ESPELHO ? "Abas deste app" : "Suas abas"));
+    b2.appendChild(el("p", "set-help", ESPELHO
+      ? "As abas de tarefas da empresa. Toque no nome pra renomear, no pincel pra trocar a cor, e nas setas pra reordenar."
+      : "Crie as abas da sua rotina. Toque no nome pra renomear, no pincel pra trocar a cor, e nas setas pra reordenar."));
 
     cats().forEach(function (c, idx) {
       b2.appendChild(catSettingRow(c, idx));
@@ -4619,7 +4698,8 @@
     b2.appendChild(add);
     wrap.appendChild(b2);
 
-    wrap.appendChild(blocoNotificacoes());
+    if (!ESPELHO) wrap.appendChild(blocoNotificacoes());
+    if (!ESPELHO && meuConsultor) wrap.appendChild(blocoAcompanhamento());
 
     /* --- conta --- */
     var b3 = el("section", "gl gl-clear set-block");
@@ -4650,7 +4730,7 @@
       cx.appendChild(linha);
       b3.appendChild(cx);
     }
-    wrap.appendChild(b3);
+    if (!ESPELHO) wrap.appendChild(b3);
     wrap.appendChild(blocoDiagnostico());
 
     elBody.appendChild(wrap);
@@ -4897,8 +4977,24 @@
     renderCatStyles();
     renderBg();
     renderFacetas();
+    // Apps compartilhados só existe para quem acompanha empresas, e nunca
+    // dentro do app de uma delas.
+    if (state.faceta === "empresas" && (!souConsultor || ESPELHO)) state.faceta = "checklist";
+    if (!settingsOpen && state.faceta === "empresas") {
+      elGreet.textContent = "Apps compartilhados";
+      elSub.textContent = "Os apps das empresas que você acompanha. Tudo o que elas criam ou mudam aparece aqui, e você pode mexer.";
+      elProg.style.display = "none";
+      elCats.style.display = "none";
+      elWeekSlot.innerHTML = "";
+      elAddRow.style.display = "none";
+      renderForm();
+      renderEmpresas();
+      return;
+    }
     if (elRodape) {
-      elRodape.textContent = settingsOpen ? RODAPE_ROTINA
+      elRodape.textContent = ESPELHO
+        ? "Tudo o que você muda aqui fica salvo no app de " + (empresaDoEspelho || "empresa") + " e aparece para a equipe."
+        : settingsOpen ? RODAPE_ROTINA
         : state.faceta === "listas" ? RODAPE_LISTAS
         : state.faceta === "agenda" ? RODAPE_AGENDA
         : RODAPE_ROTINA;
@@ -4947,7 +5043,9 @@
 
     if (settingsOpen) {
       elGreet.textContent = "Configurações";
-      elSub.textContent = "Ajuste seu nome e as abas da sua rotina.";
+      elSub.textContent = ESPELHO
+        ? "As abas do app de " + (empresaDoEspelho || "empresa") + "."
+        : "Ajuste seu nome e as abas da sua rotina.";
       elProg.style.display = "none";
       elCats.style.display = "none";
       elWeekSlot.innerHTML = "";
@@ -5017,7 +5115,10 @@
       // que existir e abrir uma tela que não salva.
       if (f === "listas") b.style.display = listasOk ? "" : "none";
       if (f === "agenda") b.style.display = agendaOk ? "" : "none";
+      if (f === "empresas") b.style.display = (souConsultor && !ESPELHO) ? "" : "none";
     });
+    var grupo = elFacetaRow.querySelector(".facetas");
+    if (grupo) grupo.classList.toggle("com-empresas", !!(souConsultor && !ESPELHO));
   }
 
   [].slice.call(document.querySelectorAll(".fc")).forEach(function (b) {
@@ -5041,6 +5142,9 @@
         agendaSemana = currentMonday;
         agendaTela = "dia";
       }
+      // Toda vez que abre, busca de novo: uma empresa pode ter acabado de
+      // usar o link.
+      if (f === "empresas") { empresasLista = null; linksAbertos = null; linkNovo = null; desligando = null; }
       save();
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -5364,6 +5468,10 @@
     var uidv = currentUser.id;
     var want = desiredRows();
     var srv = state.srv;
+    // No app de uma empresa, cada gravação abaixo vira uma chamada às funções
+    // de espelho do banco (bancoEspelho), com a mesma ordem e as mesmas
+    // respostas. Fora dele, é o banco de sempre.
+    var db = ESPELHO ? bancoEspelho : sb;
 
     function owned(o) {
       var copy = Object.assign({}, o);
@@ -5387,12 +5495,12 @@
 
     async function gravarLinha(tabela, linha, jaNoServidor) {
       if (!jaNoServidor) {
-        var novo = await sb.from(tabela).insert(linha);
+        var novo = await db.from(tabela).insert(linha);
         if (!novo.error) return novo;
         if (novo.error.code !== "23505") return novo;   // erro de verdade
         // 23505 = já está lá: segue para alterar
       }
-      return await sb.from(tabela).update(linha).eq("id", linha.id);
+      return await db.from(tabela).update(linha).eq("id", linha.id);
     }
 
     // Em lote quando dá, uma a uma quando alguma já existe. Sem isto, a
@@ -5400,7 +5508,7 @@
     // chamadas.
     async function gravarLinhas(tabela, linhas) {
       if (!linhas.length) return { error: null };
-      var lote = await sb.from(tabela).insert(linhas);
+      var lote = await db.from(tabela).insert(linhas);
       if (!lote.error) return lote;
       if (lote.error.code !== "23505") return lote;
       for (var i = 0; i < linhas.length; i++) {
@@ -5429,7 +5537,7 @@
     // 1. perfil (nome e tema)
     var pfp = fpOf(want.profile);
     if (srv.profile !== pfp) {
-      var rp = await sb.from("profiles").upsert(Object.assign({ id: uidv }, want.profile));
+      var rp = await db.from("profiles").upsert(Object.assign({ id: uidv }, want.profile));
       if (rp.error && colunaAvisoAgenda && tabelaFaltando(rp.error)) {
         // O banco ainda não tem a coluna do aviso da agenda. Desliga esse
         // pedaço e manda o perfil sem ele — em vez de deixar o sincronismo
@@ -5437,7 +5545,7 @@
         colunaAvisoAgenda = false;
         want = desiredRows();
         pfp = fpOf(want.profile);
-        rp = await sb.from("profiles").upsert(Object.assign({ id: uidv }, want.profile));
+        rp = await db.from("profiles").upsert(Object.assign({ id: uidv }, want.profile));
       }
       fail(rp);
       srv.profile = pfp;
@@ -5450,7 +5558,7 @@
       if (srv.cats[id] !== fp) catPend.push([id, fp, owned(want.cats[id])]);
     });
     if (catPend.length) {
-      fail(await sb.from("categories").upsert(catPend.map(function (p) { return p[2]; })));
+      fail(await db.from("categories").upsert(catPend.map(function (p) { return p[2]; })));
       catPend.forEach(function (p) { srv.cats[p[0]] = p[1]; });
     }
 
@@ -5461,14 +5569,14 @@
       if (srv.tasks[id] !== fp) taskPend.push([id, fp, owned(want.tasks[id])]);
     });
     if (taskPend.length) {
-      fail(await sb.from("tasks").upsert(taskPend.map(function (p) { return p[2]; })));
+      fail(await db.from("tasks").upsert(taskPend.map(function (p) { return p[2]; })));
       taskPend.forEach(function (p) { srv.tasks[p[0]] = p[1]; });
     }
 
     // 4. marcações novas
     var checkNew = Object.keys(want.checks).filter(function (k) { return !srv.checks[k]; });
     if (checkNew.length) {
-      fail(await sb.from("task_checks").upsert(checkNew.map(function (k) { return owned(want.checks[k]); })));
+      fail(await db.from("task_checks").upsert(checkNew.map(function (k) { return owned(want.checks[k]); })));
       checkNew.forEach(function (k) { srv.checks[k] = 1; });
     }
 
@@ -5477,7 +5585,7 @@
     if (checkGone.length) {
       var res = await Promise.all(checkGone.map(function (k) {
         var p = k.split("|");
-        return sb.from("task_checks").delete()
+        return db.from("task_checks").delete()
           .eq("task_id", p[0]).eq("week_monday", p[1]).eq("weekday", Number(p[2]));
       }));
       res.forEach(fail);
@@ -5487,14 +5595,14 @@
     // 6. tarefas removidas
     var taskGone = Object.keys(srv.tasks).filter(function (id) { return !want.tasks[id]; });
     if (taskGone.length) {
-      fail(await sb.from("tasks").delete().in("id", taskGone));
+      fail(await db.from("tasks").delete().in("id", taskGone));
       taskGone.forEach(function (id) { delete srv.tasks[id]; });
     }
 
     // 7. abas removidas, por último — apagar a aba leva junto o que sobrou dela
     var catGone = Object.keys(srv.cats).filter(function (id) { return !want.cats[id]; });
     if (catGone.length) {
-      fail(await sb.from("categories").delete().in("id", catGone));
+      fail(await db.from("categories").delete().in("id", catGone));
       catGone.forEach(function (id) { delete srv.cats[id]; });
     }
 
@@ -5546,13 +5654,13 @@
     // 10. itens removidos, e só então as listas removidas
     var itGone = Object.keys(srv.items).filter(function (id) { return !aqui.items[id]; });
     if (itGone.length) {
-      fail(await sb.from("list_items").delete().in("id", itGone));
+      fail(await db.from("list_items").delete().in("id", itGone));
       itGone.forEach(function (id) { delete srv.items[id]; });
     }
 
     var listGone = Object.keys(srv.lists).filter(function (id) { return !aqui.lists[id]; });
     if (listGone.length) {
-      fail(await sb.from("lists").delete().in("id", listGone));
+      fail(await db.from("lists").delete().in("id", listGone));
       listGone.forEach(function (id) { delete srv.lists[id]; });
     }
 
@@ -5617,13 +5725,13 @@
     // 12. atendimentos removidos, e só então as agendas removidas
     var apGone = Object.keys(srv.appts).filter(function (id) { return !aqui.appts[id]; });
     if (apGone.length) {
-      fail(await sb.from("appointments").delete().in("id", apGone));
+      fail(await db.from("appointments").delete().in("id", apGone));
       apGone.forEach(function (id) { delete srv.appts[id]; });
     }
 
     var agGone = Object.keys(srv.agendas).filter(function (id) { return !aqui.agendas[id]; });
     if (agGone.length) {
-      fail(await sb.from("agendas").delete().in("id", agGone));
+      fail(await db.from("agendas").delete().in("id", agGone));
       agGone.forEach(function (id) { delete srv.agendas[id]; });
     }
   }
@@ -5664,6 +5772,9 @@
   /* ---------- busca ---------- */
 
   async function pullOnce() {
+    // No app de uma empresa a leitura passa pela função do banco que confere
+    // a ligação; as tabelas, daqui, só devolveriam o que é desta conta.
+    if (ESPELHO) return pullEspelho();
     var res = await Promise.all([
       // "*" em vez da lista de colunas: pedir uma coluna que o banco ainda não
       // tem faz a busca inteira falhar, e a busca inteira falhando levaria
@@ -6056,6 +6167,9 @@
 
   async function ligarTempoReal() {
     if (!currentUser || canalTempoReal) return;
+    // No app de uma empresa não há canal: o canal dela só aceita a própria
+    // empresa. A busca a cada 20 s faz esse papel (PULL_ESPELHO_MS).
+    if (ESPELHO) return;
 
     // Entrega a credencial ao tempo real ANTES de abrir o canal. Canal privado
     // sem credencial é recusado, e como o app abre o canal logo depois de
@@ -6208,7 +6322,8 @@
       }
 
       elAuthPass.value = "";
-      await startSession(r.data.session.user);
+      if (ESPELHO) await startEspelho(r.data.session.user);
+      else await startSession(r.data.session.user);
     } catch (err) {
       authMsg(authErrorText(err), "erro");
       elAuthGo.disabled = false;
@@ -6234,6 +6349,9 @@
   async function startSession(user) {
     currentUser = user;
     STORAGE_KEY = "checklist_u_" + user.id;
+    // A última resposta do servidor, para o botão Apps compartilhados já
+    // aparecer na primeira tela (e sem internet). Ela é conferida logo depois.
+    try { souConsultor = localStorage.getItem(CONSULTOR_KEY + user.id) === "1"; } catch (e) { souConsultor = false; }
 
     var temLocal = !!localStorage.getItem(STORAGE_KEY);
     state = temLocal ? load() : ensureShape(defaultState());
@@ -6284,6 +6402,7 @@
     if (localDirty) schedulePush();
     ligarTempoReal();
     lerEstadoPush();
+    depoisDeEntrarEmpresas();
   }
 
   async function signOut() {
@@ -6295,6 +6414,10 @@
       if (STORAGE_KEY) localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(DEVICE_KEY);
       localStorage.removeItem(DEVICE_KEY_LEGACY);
+      // As cópias dos apps de empresa guardadas neste aparelho saem também.
+      Object.keys(localStorage).forEach(function (k) {
+        if (k.indexOf("checklist_e_") === 0 || k.indexOf(CONSULTOR_KEY) === 0) localStorage.removeItem(k);
+      });
     } catch (e) {}
     currentUser = null;
     STORAGE_KEY = null;
@@ -6520,7 +6643,8 @@
   var ICONES_FC = {
     checklist: '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 12.2l2.7 2.7L16.2 9"/>',
     agenda: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
-    listas: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>'
+    listas: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+    empresas: '<rect x="3.5" y="8" width="11.5" height="12.5" rx="3"/><path d="M9 4.5h8.5a3 3 0 0 1 3 3V16"/><path d="M6.8 14.3l1.9 1.9 3.3-3.6"/>'
   };
   [].slice.call(elFacetaRow.querySelectorAll(".fc")).forEach(function (b) {
     var nome = b.textContent.trim(), f = b.getAttribute("data-faceta");
@@ -6747,6 +6871,577 @@
   }
 
   /* =========================================================
+     APPS DE EMPRESA 20/11/2026
+     Duas pontas:
+     - na conta do consultor (o Alisson): a seção "Apps compartilhados",
+       o link de empresa nova e o app de cada empresa aberto por
+       ?espelho=<conta>, que é o mesmo app de sempre com os dados dela;
+     - na conta da empresa: o link aplica a configuração e as
+       Configurações avisam quem acompanha.
+     Nada muda para quem não tem ligação. No espelho, ler e gravar passa
+     pelas funções espelho_* do banco (supabase/14_empresas.sql), que
+     conferem a ligação em toda chamada.
+     ========================================================= */
+
+  /* ---- 1. o espelho ---- */
+
+  // Imita o pedaço do banco que o pushOnce usa (insert, update, upsert,
+  // delete + eq/in) e manda cada pedido para a função de espelho certa.
+  // Assim o envio do app da empresa segue a mesma ordem, o mesmo registro do
+  // que já subiu e as mesmas respostas de erro (23505, P0001) do app normal.
+  function PedidoEspelho(tabela) {
+    this.tabela = tabela; this.modo = null; this.linhas = []; this.filtro = {}; this.ids = null;
+  }
+  PedidoEspelho.prototype.insert = function (x) { this.modo = "criar"; this.linhas = [].concat(x); return this; };
+  PedidoEspelho.prototype.update = function (x) { this.modo = "alterar"; this.linhas = [x]; return this; };
+  PedidoEspelho.prototype.upsert = function (x) { this.modo = "gravar"; this.linhas = [].concat(x); return this; };
+  PedidoEspelho.prototype["delete"] = function () { this.modo = "apagar"; return this; };
+  PedidoEspelho.prototype.eq = function (c, v) { this.filtro[c] = v; return this; };
+  PedidoEspelho.prototype["in"] = function (c, v) { this.ids = v; return this; };
+  PedidoEspelho.prototype.enviar = function () {
+    // Nome, tema e avisos são da empresa: daqui não se mexe neles.
+    if (this.tabela === "profiles") return Promise.resolve({ data: null, error: null });
+    if (this.modo === "apagar") {
+      var chaves = this.ids ? this.ids.map(function (id) { return { id: id }; }) : [this.filtro];
+      return sb.rpc("espelho_apagar", { cliente: ESPELHO, tabela: this.tabela, chaves: chaves });
+    }
+    // O dono de cada linha é decidido pelo banco (sempre a empresa); o que
+    // viesse aqui seria ignorado lá de qualquer jeito.
+    var linhas = this.linhas.map(function (o) {
+      var c = Object.assign({}, o); delete c.user_id; delete c.owner_id; return c;
+    });
+    return sb.rpc("espelho_gravar", { cliente: ESPELHO, tabela: this.tabela, modo: this.modo, linhas: linhas });
+  };
+  PedidoEspelho.prototype.then = function (ok, erro) { return Promise.resolve(this.enviar()).then(ok, erro); };
+  var bancoEspelho = { from: function (tabela) { return new PedidoEspelho(tabela); } };
+
+  // Mesmo formato que o pullOnce devolve, para o resto do app não saber a
+  // diferença. Listas e agendas que terceiros compartilharam com a empresa
+  // não vêm: o espelho mostra o que é DA empresa.
+  async function pullEspelho() {
+    var r = await sb.rpc("espelho_ler", { cliente: ESPELHO });
+    if (r.error) {
+      if (r.error.code === "42501") sairDoEspelho("Este app não está mais ligado a você.");
+      throw r.error;
+    }
+    var d = r.data || {};
+    if (d.nome) { empresaDoEspelho = d.nome; atualizarFaixaEspelho(); }
+    agendasLidas = true;
+    return {
+      // O tema fica o do seu aparelho: trocar Dia/Noite aqui não muda o dela.
+      profile: { display_name: d.display_name || "", theme: (state && state.theme) || readDeviceTheme() },
+      cats: d.cats || [], tasks: d.tasks || [], checks: d.checks || [],
+      appts: d.appts || [], listaAgendas: d.agendas || [], comigo: [],
+      lists: d.lists || [], items: d.items || [], shares: [], listasComigo: []
+    };
+  }
+
+  function urlDoMeuApp() { return location.pathname; }
+
+  var saindoDoEspelho = false;
+  function sairDoEspelho(msg) {
+    if (saindoDoEspelho) return;
+    saindoDoEspelho = true;
+    if (msg) showToast(msg);
+    window.setTimeout(function () { location.replace(urlDoMeuApp()); }, msg ? 1600 : 0);
+  }
+
+  async function startEspelho(user) {
+    // Confere a ligação antes de mostrar qualquer coisa. Sem internet a
+    // pergunta não responde (lista null) e o app segue com a cópia guardada.
+    var lista = null;
+    try {
+      var r = await sb.rpc("minhas_empresas");
+      if (!r.error) lista = r.data || [];
+    } catch (e) { lista = null; }
+    var emp = lista ? lista.filter(function (x) { return x.cliente_id === ESPELHO; })[0] : null;
+    if (lista && !emp) { hideAuth(); sairDoEspelho("Este app não está ligado à sua conta."); return; }
+    if (emp) empresaDoEspelho = emp.nome || "";
+
+    // Daqui para frente o app trabalha "como" a empresa: o que é dela conta
+    // como meu (posso editar, as agendas são minhas), e a cópia local fica
+    // numa gaveta própria deste aparelho, separada da sua.
+    currentUser = { id: ESPELHO, email: null, espelho: true, consultor: user.id };
+    STORAGE_KEY = "checklist_e_" + ESPELHO;
+    var temLocal = !!localStorage.getItem(STORAGE_KEY);
+    state = temLocal ? load() : ensureShape(defaultState());
+
+    var servidor = null;
+    try { servidor = await pullOnce(); } catch (e) { servidor = null; }
+    if (saindoDoEspelho) return;
+
+    if (servidor) {
+      state = stateFromServer(servidor);
+      markServerClean(servidor);
+    } else if (!temLocal) {
+      // Sem servidor e sem cópia: não há o que mostrar, e criar um app vazio
+      // aqui seria enviar abas padrão por cima das dela quando a rede voltar.
+      hideAuth();
+      falhaDoEspelho();
+      return;
+    }
+    // Sem servidor mas com cópia: mostra a cópia e envia o que estiver
+    // pendente quando der. Nunca a migração do aparelho nem as sementes:
+    // elas são da sua conta, não da empresa.
+    state.hardResetVersion = HARD_RESET_VERSION;
+    state.seedVersion = SEED_VERSION;
+
+    persistQuiet();
+    hideAuth();
+    montarFaixaEspelho();
+    applyTheme();
+    render();
+    lastPullAt = Date.now();
+    pullRitmo = PULL_ESPELHO_MS;
+    if (localDirty) schedulePush();
+  }
+
+  function falhaDoEspelho() {
+    elGreet.textContent = "App de empresa";
+    elSub.textContent = "Não deu para abrir agora. Confira a internet e tente de novo.";
+    elBody.innerHTML = "";
+    var b = el("button", "minibtn", "Voltar para o meu app");
+    b.type = "button";
+    b.addEventListener("click", function () { location.replace(urlDoMeuApp()); });
+    elBody.appendChild(b);
+  }
+
+  var faixaEspelho = null;
+  function montarFaixaEspelho() {
+    if (faixaEspelho) { atualizarFaixaEspelho(); return; }
+    faixaEspelho = el("div", "faixa-espelho");
+    faixaEspelho.setAttribute("role", "status");
+    var txt = el("span", "fe-txt");
+    faixaEspelho.appendChild(txt);
+    var volta = el("button", "fe-volta", "Voltar ao meu app");
+    volta.type = "button";
+    volta.addEventListener("click", function () { location.href = urlDoMeuApp(); });
+    faixaEspelho.appendChild(volta);
+    var topo = document.querySelector(".page > header.top");
+    topo.parentNode.insertBefore(faixaEspelho, topo);
+    atualizarFaixaEspelho();
+  }
+  function atualizarFaixaEspelho() {
+    if (!faixaEspelho) return;
+    var txt = faixaEspelho.querySelector(".fe-txt");
+    txt.textContent = "";
+    txt.appendChild(el("small", "", "Você está no app de"));
+    txt.appendChild(el("b", "", empresaDoEspelho || "empresa"));
+    document.title = (empresaDoEspelho || "Empresa") + " · Checklist";
+  }
+
+  function blocoEspelhoConfig() {
+    var b = el("section", "gl gl-clear set-block");
+    b.appendChild(el("h2", "set-title", "App de " + (empresaDoEspelho || "empresa")));
+    b.appendChild(el("p", "set-help",
+      "Você está mexendo no app de " + (empresaDoEspelho || "uma empresa") + ". O que mudar aqui " +
+      "(abas, tarefas, agenda e listas) aparece para a equipe na hora. O nome, os avisos e a conta " +
+      "são da empresa e ficam com ela."));
+    var volta = el("button", "minibtn", "Voltar para o meu app");
+    volta.type = "button";
+    volta.style.marginTop = "12px";
+    volta.addEventListener("click", function () { location.href = urlDoMeuApp(); });
+    b.appendChild(volta);
+    return b;
+  }
+
+  /* ---- 2. o lado do consultor: Apps compartilhados ---- */
+
+  var empresasLista = null;      // null = ainda não buscou
+  var linksAbertos = null;
+  var linkNovo = null;           // { nome, url, vence }
+  var desligando = null;         // cliente_id esperando confirmação
+  var empresasCarregando = false;
+  var rascunhoEmpresa = { nome: "", abas: "", agendas: "" };
+
+  function ddmm(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0");
+  }
+
+  function urlDoLink(token) {
+    return location.origin + location.pathname + "?empresa=" + token;
+  }
+
+  function limparNomes(lista, max) {
+    var vistos = {}, out = [];
+    (Array.isArray(lista) ? lista : []).forEach(function (s) {
+      var t = String(s || "").replace(/\s+/g, " ").trim().slice(0, 40);
+      var k = t.toLowerCase();
+      if (!t || vistos[k] || out.length >= max) return;
+      vistos[k] = true;
+      out.push(t);
+    });
+    return out;
+  }
+
+  async function carregarEmpresas() {
+    if (empresasCarregando || !currentUser || ESPELHO) return;
+    empresasCarregando = true;
+    try {
+      var r = await sb.rpc("minhas_empresas");
+      empresasLista = r.error ? [] : (r.data || []);
+      var c = await sb.from("convites_empresa")
+        .select("token,nome,expires_at,created_at")
+        .is("used_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false });
+      linksAbertos = c.error ? [] : (c.data || []);
+    } catch (e) {
+      if (empresasLista === null) empresasLista = [];
+      if (linksAbertos === null) linksAbertos = [];
+    }
+    empresasCarregando = false;
+    if (state.faceta === "empresas" && !settingsOpen && !campoEmpresaEmUso()) render();
+  }
+
+  // Um redesenho no meio da digitação apagaria o que está sendo escrito.
+  function campoEmpresaEmUso() {
+    var a = document.activeElement;
+    return !!(a && a.closest && a.closest(".empresas-tela") && a.matches("input, textarea"));
+  }
+
+  function copiarTexto(texto, campo) {
+    function manual() {
+      if (campo) { campo.focus(); campo.select(); }
+      showToast("Segure no link e escolha Copiar.");
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).then(function () { showToast("Link copiado."); }, manual);
+    } else manual();
+  }
+
+  function blocoDoLink(nome, url, vence) {
+    var box = el("div", "danger-box");
+    box.appendChild(el("span", "danger-msg",
+      "Mande este link para " + nome + ". Quem abrir e criar a conta já entra com tudo pronto, ligado a você. " +
+      "Vale até " + ddmm(vence) + " e serve para uma conta só."));
+    var campo = el("input", "inp empresa-link");
+    campo.type = "text";
+    campo.readOnly = true;
+    campo.value = url;
+    campo.setAttribute("aria-label", "Link de " + nome);
+    campo.addEventListener("focus", function () { campo.select(); });
+    box.appendChild(campo);
+    var acts = el("div", "empresa-acts");
+    var copiar = el("button", "minibtn", "Copiar link");
+    copiar.type = "button";
+    copiar.addEventListener("click", function () { copiarTexto(url, campo); });
+    acts.appendChild(copiar);
+    box.appendChild(acts);
+    return box;
+  }
+
+  function renderEmpresas() {
+    elBody.innerHTML = "";
+    var wrap = el("div", "settings empresas-tela");
+    if (empresasLista === null || linksAbertos === null) carregarEmpresas();
+
+    /* --- as empresas ligadas --- */
+    var b1 = el("section", "gl gl-clear set-block");
+    b1.appendChild(el("h2", "set-title", "Empresas"));
+    if (empresasLista === null) {
+      b1.appendChild(el("p", "set-help", "Buscando…"));
+    } else if (!empresasLista.length) {
+      b1.appendChild(el("p", "set-help", "Nenhuma empresa ainda. Prepare o app da primeira aqui embaixo."));
+    } else {
+      b1.appendChild(el("p", "set-help",
+        "Toque em Abrir para ver e mexer no app da empresa, do jeito que a equipe vê."));
+      empresasLista.forEach(function (emp) {
+        var linha = el("div", "empresa-linha");
+        linha.appendChild(el("span", "task-title", emp.nome || "Sem nome"));
+        if (emp.desde) linha.appendChild(el("span", "task-when", "desde " + ddmm(emp.desde)));
+        var abrir = el("button", "minibtn", "Abrir");
+        abrir.type = "button";
+        abrir.addEventListener("click", function () {
+          location.href = location.pathname + "?espelho=" + encodeURIComponent(emp.cliente_id);
+        });
+        linha.appendChild(abrir);
+        var tirar = el("button", "miniicon");
+        tirar.type = "button";
+        tirar.setAttribute("aria-label", "Desligar " + (emp.nome || "empresa"));
+        tirar.appendChild(svgPath(ICON_DEL));
+        tirar.addEventListener("click", function () {
+          desligando = desligando === emp.cliente_id ? null : emp.cliente_id;
+          render();
+        });
+        linha.appendChild(tirar);
+        b1.appendChild(linha);
+
+        if (desligando === emp.cliente_id) {
+          var cx = el("div", "danger-box");
+          cx.appendChild(el("span", "danger-msg",
+            "Desligar " + (emp.nome || "esta empresa") + "? O app dela continua inteiro, com tudo dentro. " +
+            "Ela só deixa de aparecer aqui, e você deixa de ver e mexer."));
+          var acts = el("div", "danger-acts");
+          var sim = el("button", "minibtn", "Desligar");
+          sim.type = "button";
+          sim.addEventListener("click", function () { desligarEmpresa(emp, sim); });
+          var nao = el("button", "minibtn minibtn-ghost", "Cancelar");
+          nao.type = "button";
+          nao.addEventListener("click", function () { desligando = null; render(); });
+          acts.appendChild(sim);
+          acts.appendChild(nao);
+          cx.appendChild(acts);
+          b1.appendChild(cx);
+        }
+      });
+    }
+    wrap.appendChild(b1);
+
+    /* --- preparar uma nova --- */
+    var b2 = el("section", "gl gl-clear set-block");
+    b2.appendChild(el("h2", "set-title", "Preparar o app de uma empresa"));
+    b2.appendChild(el("p", "set-help",
+      "Escreva o nome da empresa e o que o app dela já traz pronto. Você recebe um link: quem abrir " +
+      "e criar a conta entra com tudo isso, e o app fica ligado a você. A página Geral já vem em todo " +
+      "app e junta as tarefas de todas as abas."));
+
+    var nome = el("input", "inp");
+    nome.type = "text";
+    nome.placeholder = "Nome da empresa";
+    nome.setAttribute("aria-label", "Nome da empresa");
+    nome.value = rascunhoEmpresa.nome;
+    nome.maxLength = 80;
+    nome.addEventListener("input", function () { rascunhoEmpresa.nome = nome.value; });
+    b2.appendChild(nome);
+
+    var rotAbas = el("label", "empresa-rot", "Abas de tarefas, uma por linha");
+    var abas = el("textarea", "inp empresa-area");
+    abas.id = "empresaAbas";
+    rotAbas.htmlFor = abas.id;
+    abas.placeholder = "Feed\nStory\nAções";
+    abas.value = rascunhoEmpresa.abas;
+    abas.addEventListener("input", function () { rascunhoEmpresa.abas = abas.value; });
+    b2.appendChild(rotAbas);
+    b2.appendChild(abas);
+
+    var rotAg = el("label", "empresa-rot", "Agendas, uma por linha");
+    var ags = el("textarea", "inp empresa-area");
+    ags.id = "empresaAgendas";
+    rotAg.htmlFor = ags.id;
+    ags.placeholder = "Reunião MKT";
+    ags.value = rascunhoEmpresa.agendas;
+    ags.addEventListener("input", function () { rascunhoEmpresa.agendas = ags.value; });
+    b2.appendChild(rotAg);
+    b2.appendChild(ags);
+
+    var gerar = el("button", "minibtn", "Gerar link");
+    gerar.type = "button";
+    gerar.style.marginTop = "14px";
+    gerar.addEventListener("click", function () { gerarLinkEmpresa(gerar); });
+    b2.appendChild(gerar);
+
+    if (linkNovo) {
+      var novo = blocoDoLink(linkNovo.nome, linkNovo.url, linkNovo.vence);
+      novo.style.marginTop = "14px";
+      b2.appendChild(novo);
+    }
+    wrap.appendChild(b2);
+
+    /* --- links que ainda não foram usados --- */
+    var abertos = (linksAbertos || []).filter(function (l) { return !linkNovo || urlDoLink(l.token) !== linkNovo.url; });
+    if (abertos.length) {
+      var b3 = el("section", "gl gl-clear set-block");
+      b3.appendChild(el("h2", "set-title", "Links ainda não usados"));
+      abertos.forEach(function (l) {
+        var linha = el("div", "empresa-linha");
+        linha.appendChild(el("span", "task-title", l.nome));
+        linha.appendChild(el("span", "task-when", "até " + ddmm(l.expires_at)));
+        var cp = el("button", "minibtn", "Copiar");
+        cp.type = "button";
+        cp.addEventListener("click", function () { copiarTexto(urlDoLink(l.token), null); });
+        linha.appendChild(cp);
+        var cancelar = el("button", "miniicon");
+        cancelar.type = "button";
+        cancelar.setAttribute("aria-label", "Cancelar o link de " + l.nome);
+        cancelar.appendChild(svgPath(ICON_DEL));
+        armarExclusao(cancelar, "Cancelar o link de " + l.nome, function () { cancelarLink(l.token); });
+        linha.appendChild(cancelar);
+        b3.appendChild(linha);
+      });
+      wrap.appendChild(b3);
+    }
+
+    elBody.appendChild(wrap);
+  }
+
+  async function gerarLinkEmpresa(botao) {
+    var nome = rascunhoEmpresa.nome.replace(/\s+/g, " ").trim();
+    if (!nome) { showToast("Escreva o nome da empresa."); return; }
+    var abas = limparNomes(rascunhoEmpresa.abas.split("\n"), 12);
+    // A página Geral já existe em todo app. Uma aba com o mesmo nome deixaria
+    // duas "Geral" na barra (decisão dele em 20/11/2026: sem aba Geral).
+    var tinhaGeral = abas.some(function (a) { return a.toLowerCase() === "geral"; });
+    abas = abas.filter(function (a) { return a.toLowerCase() !== "geral"; });
+    var agendasCfg = limparNomes(rascunhoEmpresa.agendas.split("\n"), LIMITE_AGENDAS);
+
+    botao.disabled = true;
+    var r;
+    try {
+      r = await sb.rpc("criar_convite_empresa", {
+        nome_empresa: nome,
+        config_empresa: { abas: abas, agendas: agendasCfg }
+      });
+    } catch (e) { r = { error: e }; }
+    botao.disabled = false;
+
+    if (r.error || !r.data || !r.data.ok) {
+      showToast(r.data && r.data.erro === "nao e consultor"
+        ? "Esta conta não está marcada como consultora no banco."
+        : "Não deu para gerar o link agora. Tente de novo.");
+      return;
+    }
+    linkNovo = { nome: nome, url: urlDoLink(r.data.token), vence: r.data.expira_em };
+    rascunhoEmpresa = { nome: "", abas: "", agendas: "" };
+    linksAbertos = null;
+    render();
+    if (tinhaGeral) showToast("A página Geral já vem em todo app, então não criei uma aba com esse nome.");
+    else showToast("Link pronto.");
+  }
+
+  async function cancelarLink(token) {
+    var r;
+    try { r = await sb.from("convites_empresa").delete().eq("token", token); } catch (e) { r = { error: e }; }
+    if (r.error) { showToast("Não deu para cancelar agora."); return; }
+    if (linkNovo && linkNovo.url === urlDoLink(token)) linkNovo = null;
+    linksAbertos = null;
+    render();
+    showToast("Link cancelado.");
+  }
+
+  async function desligarEmpresa(emp, botao) {
+    botao.disabled = true;
+    var r;
+    try { r = await sb.rpc("desligar_empresa", { cliente: emp.cliente_id }); } catch (e) { r = { error: e }; }
+    botao.disabled = false;
+    if (r.error || !r.data || !r.data.ok) { showToast("Não deu para desligar agora."); return; }
+    // A cópia do app dela guardada neste aparelho também sai.
+    try { localStorage.removeItem("checklist_e_" + emp.cliente_id); } catch (e) {}
+    desligando = null;
+    empresasLista = null;
+    render();
+    showToast((emp.nome || "Empresa") + " desligada.");
+  }
+
+  /* ---- 3. depois de entrar (conta normal): consultor, link e aviso ---- */
+
+  async function depoisDeEntrarEmpresas() {
+    if (ESPELHO || !currentUser) return;
+    var eu = currentUser.id;
+
+    // 1. Esta conta acompanha empresas? (o botão Apps compartilhados)
+    try {
+      var r = await sb.rpc("sou_consultor");
+      if (!r.error && currentUser && currentUser.id === eu) {
+        var antes = souConsultor;
+        souConsultor = r.data === true;
+        try { localStorage.setItem(CONSULTOR_KEY + eu, souConsultor ? "1" : "0"); } catch (e) {}
+        if (antes !== souConsultor) {
+          if (state.faceta === "empresas" && !souConsultor) render();
+          else renderFacetas();
+        }
+      }
+    } catch (e) {}
+
+    // 2. Um link de empresa esperando para ser usado
+    await usarLinkPendente();
+
+    // 3. Quem acompanha este app (vira um aviso nas Configurações)
+    try {
+      var m = await sb.rpc("meu_consultor");
+      if (!m.error && currentUser && currentUser.id === eu) {
+        meuConsultor = (m.data && m.data[0]) || null;
+        if (settingsOpen) render();
+      }
+    } catch (e) {}
+  }
+
+  async function usarLinkPendente() {
+    var tk = null;
+    try { tk = localStorage.getItem(CONVITE_EMPRESA_KEY); } catch (e) {}
+    if (!tk) return;
+    var r;
+    try { r = await sb.rpc("usar_convite_empresa", { token_empresa: tk }); } catch (e) { return; }
+    // Sem internet, ou banco ainda sem o 14_empresas.sql: o link fica
+    // guardado e é tentado de novo na próxima abertura.
+    if (r.error || !r.data) return;
+
+    try { localStorage.removeItem(CONVITE_EMPRESA_KEY); } catch (e) {}
+    if (PARAMS_URL.has("empresa")) {
+      try { history.replaceState(null, "", location.pathname); } catch (e) {}
+    }
+    var v = r.data;
+    if (!v.ok) {
+      showToast(v.erro === "proprio"
+        ? "Esse link é para a empresa abrir na conta dela, não na sua."
+        : v.erro === "ja acompanhada"
+          ? "Este app já é acompanhado por outra pessoa."
+          : "Esse link já foi usado ou venceu. Peça um novo.");
+      return;
+    }
+    aplicarConfigEmpresa(v.config || {}, v.nome || "");
+  }
+
+  // Deixa pronto o que o consultor preparou. Numa conta nova, as abas da
+  // empresa entram NO LUGAR da "Pessoal" que todo app novo traz. Numa conta
+  // que já tem coisa, só acrescenta o que falta: nada existente é apagado.
+  function aplicarConfigEmpresa(cfg, nome) {
+    var abas = limparNomes(cfg.abas, 12).filter(function (a) { return a.toLowerCase() !== "geral"; });
+    var ags = limparNomes(cfg.agendas, LIMITE_AGENDAS);
+    var semTarefas = cats().every(function (c) {
+      var b = state[c.id];
+      return !b || (!b.schedule.length && !b.projects.length);
+    });
+    var vazia = semTarefas && !listas().length && !agenda().length;
+
+    if (abas.length) {
+      if (vazia) {
+        cats().forEach(function (c) { delete state[c.id]; });
+        state.categories = [];
+      }
+      var tem = {};
+      cats().forEach(function (c) { tem[String(c.label).trim().toLowerCase()] = true; });
+      abas.forEach(function (label) {
+        if (tem[label.toLowerCase()]) return;
+        var nova = { id: "c" + uid(), label: label, palette: PALETTES[cats().length % PALETTES.length].id };
+        state.categories.push(nova);
+        state[nova.id] = { schedule: [], projects: [] };
+        tem[label.toLowerCase()] = true;
+      });
+      state.activeTab = OVERVIEW_ID;
+    }
+
+    if (ags.length && agendaOk) {
+      if (vazia) {
+        // A "Agenda" vazia que o app cria sozinho dá lugar às da empresa.
+        state.agendas = agendas().filter(function (g) { return !(ehMinha(g) && g.title === "Agenda"); });
+      }
+      var temAg = {};
+      minhasAgendas().forEach(function (g) { temAg[String(g.title).trim().toLowerCase()] = true; });
+      ags.forEach(function (t) {
+        if (temAg[t.toLowerCase()]) return;
+        if (criarAgenda(t)) temAg[t.toLowerCase()] = true;
+      });
+    }
+
+    state.faceta = "checklist";
+    save();
+    render();
+    showToast(nome ? "Pronto: o app de " + nome + " está configurado." : "Pronto: o app está configurado.");
+  }
+
+  function blocoAcompanhamento() {
+    var b = el("section", "gl gl-clear set-block");
+    b.appendChild(el("h2", "set-title", "Quem acompanha este app"));
+    b.appendChild(el("p", "set-help",
+      "Este app é acompanhado por " + (meuConsultor.consultor || "seu consultor") + ". " +
+      "Ele vê e pode mexer em tudo o que está aqui: abas, tarefas, agenda e listas."));
+    return b;
+  }
+
+  /* =========================================================
      BOOT
      ========================================================= */
 
@@ -6758,7 +7453,7 @@
   // "cadastre uma vez e nunca mais". Senão, mostra a tela de entrada.
   sb.auth.getSession().then(function (r) {
     var sessao = r && r.data && r.data.session;
-    if (sessao && sessao.user) return startSession(sessao.user);
+    if (sessao && sessao.user) return ESPELHO ? startEspelho(sessao.user) : startSession(sessao.user);
     showAuth();
   }).catch(function () { showAuth(); });
 
