@@ -1524,7 +1524,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v38";
+  var VERSAO_APP = "v39";
 
   /* ---- apps de empresa (20/11/2026) ----
      checklist.html?espelho=<conta> abre o app de uma empresa que esta conta
@@ -1867,6 +1867,7 @@
     if (!STORAGE_KEY) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     localDirty = true;
+    mudancasLocais++;
     schedulePush();
   }
 
@@ -1882,6 +1883,10 @@
   var state = ensureShape(defaultState());
   var seedChanged = false;
   var localDirty = false;
+  // Contadores para saber se algo foi gravado aqui ou enviado enquanto um
+  // envio ou uma busca estavam no caminho (ver runPush e maybePull).
+  var mudancasLocais = 0;
+  var enviosFeitos = 0;
 
   /* =========================================================
      ESTADO DE TELA
@@ -3511,11 +3516,22 @@
   // tirou o acesso), cai na primeira que sobrou em vez de mostrar tela vazia.
   function agendaAtual() {
     var g = agendaSel ? agendaDe(agendaSel) : null;
-    if (!g) {
-      g = minhasAgendas()[0] || agendas()[0] || null;
-      agendaSel = g ? g.id : null;
-    }
+    // A última agenda aberta NESTE aparelho (20/11/2026). Antes toda abertura
+    // caía na agenda própria: quem cuida da agenda de outra pessoa abria o
+    // app, marcava o paciente sem perceber e ele ia para a agenda dela, que o
+    // dono não vê.
+    if (!g) g = agendaDe(agendaLembrada());
+    if (!g) g = minhasAgendas()[0] || agendas()[0] || null;
+    agendaSel = g ? g.id : null;
     return g;
+  }
+
+  function chaveAgendaAberta() { return currentUser ? "checklist_agenda_" + currentUser.id : null; }
+  function agendaLembrada() {
+    try { var k = chaveAgendaAberta(); return k ? localStorage.getItem(k) : null; } catch (e) { return null; }
+  }
+  function lembrarAgenda(id) {
+    try { var k = chaveAgendaAberta(); if (k && id) localStorage.setItem(k, id); } catch (e) {}
   }
 
   function ehMinha(g) { return !!g && (!g.ownerId || g.ownerId === meuId()); }
@@ -3760,7 +3776,9 @@
 
     var atual = agendaAtual();
     agendas().forEach(function (g) {
-      var b = el("button", "fc", g.title);
+      // A agenda de outra pessoa diz de quem é no próprio botão. Sem isso a
+      // dele e a dela se chamavam as duas "Agenda" e eram dois botões iguais.
+      var b = el("button", "fc", ehMinha(g) ? g.title : g.title + " · " + (g.dono || "outra pessoa"));
       b.type = "button";
       var p = paletteOf(g.palette);
       b.style.setProperty("--fc1", p.c1);
@@ -3772,6 +3790,7 @@
       b.addEventListener("click", function () {
         if (agendaSel === g.id) return;
         agendaSel = g.id;
+        lembrarAgenda(g.id);
         atendEditando = null;
         formOpen = false;
         render();
@@ -5389,11 +5408,34 @@
   function markServerClean(d) {
     var want = desiredRows();
     var srv = { profile: fpOf(want.profile), cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {}, agendas: {} };
+    var faltaSubir = false;
 
-    // Abas, tarefas e marcações não passam por preservação: seguem como antes.
-    Object.keys(want.cats).forEach(function (id) { srv.cats[id] = fpOf(want.cats[id]); });
-    Object.keys(want.tasks).forEach(function (id) { srv.tasks[id] = fpOf(want.tasks[id]); });
-    Object.keys(want.checks).forEach(function (k) { srv.checks[k] = 1; });
+    // Abas, tarefas e marcações: o que mesclarPendentes manteve daqui NÃO
+    // está no servidor — fica com o registro antigo (diferente do que está na
+    // tela) para o próximo envio mandar. Marcar tudo como enviado aqui era
+    // repetir o defeito que já tinha acontecido com as listas.
+    var m = mesclaPendente || { srvAntes: { cats: {}, tasks: {} }, cats: {}, catsApagadas: {},
+                                 tarefas: {}, tarefasApagadas: {}, checksNovos: {}, checksTirados: {} };
+    mesclaPendente = null;
+    function pendente(grupo, antes, id) {
+      faltaSubir = true;
+      if (antes[id] !== undefined) srv[grupo][id] = antes[id];
+    }
+    Object.keys(want.cats).forEach(function (id) {
+      if (m.cats[id]) pendente("cats", m.srvAntes.cats, id);
+      else srv.cats[id] = fpOf(want.cats[id]);
+    });
+    Object.keys(m.catsApagadas).forEach(function (id) { pendente("cats", m.srvAntes.cats, id); });
+    Object.keys(want.tasks).forEach(function (id) {
+      if (m.tarefas[id]) pendente("tasks", m.srvAntes.tasks, id);
+      else srv.tasks[id] = fpOf(want.tasks[id]);
+    });
+    Object.keys(m.tarefasApagadas).forEach(function (id) { pendente("tasks", m.srvAntes.tasks, id); });
+    Object.keys(want.checks).forEach(function (k) {
+      if (m.checksNovos[k]) faltaSubir = true;
+      else srv.checks[k] = 1;
+    });
+    Object.keys(m.checksTirados).forEach(function (k) { srv.checks[k] = 1; faltaSubir = true; });
 
     var veio = { lists: {}, items: {}, appts: {}, agendas: {} };
     if (d) {
@@ -5403,7 +5445,6 @@
       (d.listaAgendas || []).forEach(function (x) { veio.agendas[x.id] = true; });
     }
 
-    var faltaSubir = false;
     ["lists", "items", "appts", "agendas"].forEach(function (grupo) {
       Object.keys(want[grupo]).forEach(function (id) {
         // Sem a resposta da busca em mãos, mantém o comportamento antigo.
@@ -5437,12 +5478,21 @@
     pushTimer = window.setTimeout(runPush, 800);
   }
 
+  var novaTentativaTimer = null;
+
   async function runPush() {
     if (!currentUser || pushing) { if (pushing) pushQueued = true; return; }
     pushing = true;
+    window.clearTimeout(novaTentativaTimer);
+    var mudancasAntes = mudancasLocais;
     try {
       await pushOnce();
-      localDirty = false;
+      // O que a pessoa fez ENQUANTO o envio ia não estava nele. Zerar o
+      // pendente nesse caso abria uma janela para uma busca chegar, achar o
+      // app "em dia" e levar a marcação recém-feita (o envio dela já está
+      // agendado pelo save).
+      if (mudancasLocais === mudancasAntes) localDirty = false;
+      enviosFeitos++;
       persistQuiet();
       falhasSeguidas = 0;
     } catch (e) {
@@ -5450,6 +5500,12 @@
       // que ficou pendente sobe na próxima tentativa. Nada se perde.
       persistQuiet();
       falhasSeguidas++;
+      // Até a v38 não havia próxima tentativa: o app esperava a pessoa mexer
+      // em alguma coisa, e enquanto isso também não buscava nada (a busca
+      // espera o pendente subir). Agora tenta de novo sozinho, cada vez com
+      // mais calma: 5 s, 10 s, 20 s, 40 s e depois a cada minuto.
+      var espera = Math.min(60000, 5000 * Math.pow(2, falhasSeguidas - 1));
+      novaTentativaTimer = window.setTimeout(function () { if (localDirty) schedulePush(); }, espera);
       // Falhar calado foi o que deixou o problema invisível: o app parecia
       // salvo e não estava. Avisa uma vez, sem ficar repetindo a cada tentativa.
       if (falhasSeguidas === 3) {
@@ -5897,8 +5953,140 @@
     return doServidor;
   }
 
+  /* ---------- a mesma regra para abas, tarefas e marcações (20/11/2026) ----------
+
+     Até a v38 só listas e agendas tinham a proteção acima. Abas, tarefas e
+     marcações eram trocadas inteiras pela cópia do servidor ao abrir o app —
+     e uma tarefa marcada que ainda não tinha subido (app fechado logo depois,
+     ou sem internet na hora) voltava desmarcada. Era o "marco como feita e
+     ela volta".
+
+     A pergunta é a mesma de sempre, feita ao registro srv deste aparelho:
+     - a linha daqui é igual ao que o servidor confirmou? Então não há nada
+       pendente e quem manda é o servidor (pode ter mudado noutro aparelho);
+     - é diferente, ou nunca subiu? Então é mudança daqui ainda não enviada,
+       e ela fica;
+     - o servidor já teve e não tem mais? Foi apagada noutro aparelho, e
+       apagada fica;
+     - está no registro e não está aqui? Foi apagada AQUI e ainda não lá:
+       continua apagada.
+     O que ficou pendente é anotado em mesclaPendente, para o
+     markServerClean saber que aquilo ainda precisa subir. ---------- */
+  var mesclaPendente = null;
+
+  function mesclarPendentes(st) {
+    var loc = state;                       // a cópia deste aparelho, antes da troca
+    var srvL = (loc && loc.srv) || {};
+    var sCats = srvL.cats || {}, sTasks = srvL.tasks || {}, sChecks = srvL.checks || {};
+    var rowsL = desiredRows();             // lê o state, que ainda é o daqui
+    var m = { srvAntes: { cats: sCats, tasks: sTasks },
+              cats: {}, catsApagadas: {}, tarefas: {}, tarefasApagadas: {},
+              checksNovos: {}, checksTirados: {} };
+    function tirar(lista, o) { var i = lista.indexOf(o); if (i >= 0) lista.splice(i, 1); }
+
+    // ---- abas ----
+    var catSrv = {};
+    st.categories.forEach(function (c) { catSrv[c.id] = c; });
+    var catsLocais = (loc && Array.isArray(loc.categories)) ? loc.categories : [];
+    var ordemLocal = {};
+    catsLocais.forEach(function (c, i) {
+      ordemLocal[c.id] = i;
+      if (sCats[c.id] === fpOf(rowsL.cats[c.id])) return;          // nada pendente
+      if (!catSrv[c.id] && sCats[c.id] !== undefined) return;       // apagada noutro aparelho
+      m.cats[c.id] = true;
+      if (catSrv[c.id]) {
+        catSrv[c.id].label = c.label;
+        catSrv[c.id].palette = c.palette;
+      } else {
+        catSrv[c.id] = { id: c.id, label: c.label, palette: c.palette };
+        st.categories.push(catSrv[c.id]);
+        st[c.id] = { schedule: [], projects: [] };
+      }
+    });
+    Object.keys(sCats).forEach(function (id) {
+      if (ordemLocal[id] !== undefined || !catSrv[id]) return;
+      m.catsApagadas[id] = true;                                   // apagada aqui, ainda não lá
+      st.categories = st.categories.filter(function (c) { return c.id !== id; });
+      delete st[id];
+    });
+    if (Object.keys(m.cats).length || Object.keys(m.catsApagadas).length) {
+      // Mudança de aba pendente inclui mudança de ordem: vale a ordem daqui, e
+      // as abas que só o servidor conhece (criadas noutro aparelho) vão ao fim.
+      st.categories.sort(function (a, b) {
+        var x = ordemLocal[a.id], y = ordemLocal[b.id];
+        if (x === undefined && y === undefined) return 0;
+        if (x === undefined) return 1;
+        if (y === undefined) return -1;
+        return x - y;
+      });
+    }
+
+    // ---- tarefas ----
+    function indexar(fonte, listaCats) {
+      var porId = {};
+      listaCats.forEach(function (c) {
+        var b = fonte[c.id];
+        if (!b) return;
+        (b.schedule || []).forEach(function (o) { porId[o.id] = { cat: c.id, lista: "schedule", o: o }; });
+        (b.projects || []).forEach(function (o) { porId[o.id] = { cat: c.id, lista: "projects", o: o }; });
+      });
+      return porId;
+    }
+    var tSrv = indexar(st, st.categories);
+    var tLoc = indexar(loc || {}, catsLocais);
+    Object.keys(tLoc).forEach(function (id) {
+      if (sTasks[id] === fpOf(rowsL.tasks[id])) return;            // nada pendente
+      var la = tSrv[id];
+      if (!la && sTasks[id] !== undefined) return;                  // apagada noutro aparelho
+      var L = tLoc[id];
+      if (!st[L.cat]) return;                                       // a aba dela não existe mais
+      m.tarefas[id] = true;
+      var copia = JSON.parse(JSON.stringify(L.o));
+      // As marcações vêm do servidor (podem ter chegado de outro aparelho);
+      // as pendentes daqui entram logo abaixo, uma a uma.
+      if (L.lista === "schedule") copia.doneMap = (la && la.o.doneMap) ? la.o.doneMap : {};
+      if (la) tirar(st[la.cat][la.lista], la.o);
+      st[L.cat][L.lista].push(copia);
+      tSrv[id] = { cat: L.cat, lista: L.lista, o: copia };
+    });
+    Object.keys(sTasks).forEach(function (id) {
+      if (tLoc[id] || !tSrv[id]) return;
+      m.tarefasApagadas[id] = true;                                 // apagada aqui, ainda não lá
+      tirar(st[tSrv[id].cat][tSrv[id].lista], tSrv[id].o);
+      delete tSrv[id];
+    });
+
+    // ---- marcações ----
+    Object.keys(rowsL.checks).forEach(function (k) {
+      if (sChecks[k]) return;                                       // o servidor já tinha
+      var c = rowsL.checks[k], alvo = tSrv[c.task_id];
+      if (!alvo || alvo.lista !== "schedule") return;               // a tarefa não existe mais
+      var dm = alvo.o.doneMap;
+      if (dm[c.week_monday] && dm[c.week_monday][c.weekday]) return;   // outro aparelho já marcou
+      if (!dm[c.week_monday]) dm[c.week_monday] = {};
+      dm[c.week_monday][c.weekday] = true;
+      m.checksNovos[k] = true;
+    });
+    Object.keys(sChecks).forEach(function (k) {
+      if (rowsL.checks[k]) return;                                  // continua marcada aqui
+      var p = k.split("|");
+      if (!tLoc[p[0]]) return;                                      // a tarefa saiu junto
+      var alvo = tSrv[p[0]];
+      if (!alvo || alvo.lista !== "schedule") return;
+      var dia = alvo.o.doneMap[p[1]];
+      if (!dia || !dia[p[2]]) return;                               // lá também já saiu
+      delete dia[p[2]];
+      m.checksTirados[k] = true;                                    // desmarcada aqui, ainda não lá
+    });
+
+    mesclaPendente = m;
+  }
+
   // Reconstrói o formato que a tela usa a partir das linhas do banco.
-  function stateFromServer(d) {
+  // semMescla: a cópia deste aparelho não é desta conta (aparelho novo) e não
+  // tem nada a preservar.
+  function stateFromServer(d, semMescla) {
+    mesclaPendente = null;
     var st = {
       categories: d.cats.map(function (c) { return { id: c.id, label: c.label, palette: c.palette }; }),
       userName: (d.profile && d.profile.display_name) || "",
@@ -5946,6 +6134,8 @@
       if (!it.doneMap[r.week_monday]) it.doneMap[r.week_monday] = {};
       it.doneMap[r.week_monday][r.weekday] = true;
     });
+
+    if (!semMescla) mesclarPendentes(st);
 
     st.categories.forEach(function (c) {
       st[c.id].schedule.sort(function (a, b) { return a.createdAt - b.createdAt; });
@@ -6111,10 +6301,15 @@
     if (document.hidden) return;
     if (!force && Date.now() - lastPullAt < PULL_MIN_GAP_MS) return;
     lastPullAt = Date.now();
+    var momento = mudancasLocais + ":" + enviosFeitos;
 
     pullOnce().then(function (d) {
       if (!d.cats.length) return;      // conta ainda vazia: nada a trazer
       if (pullBloqueado()) return;     // algo mudou enquanto a busca ia e voltava
+      // Algo foi gravado aqui, ou subiu, enquanto a busca ia e voltava: a
+      // resposta já nasceu velha e desfaria o que acabou de ser feito. A
+      // próxima busca (o aviso do próprio envio dispara uma) traz o certo.
+      if (momento !== mudancasLocais + ":" + enviosFeitos) return;
 
       var anterior = state;
       state = stateFromServer(d);
@@ -6132,7 +6327,7 @@
         // descartava a busca inteira e a agenda compartilhada sumia da tela.
         // Era o "tem hora que aparece, tem hora que não".
         && fpDoQueEhDosOutros(state) === fpDoQueEhDosOutros(anterior);
-      if (igual) { state = anterior; return; }
+      if (igual) { state = anterior; mesclaPendente = null; return; }
 
       markServerClean(d);
       persistQuiet();
@@ -6145,6 +6340,9 @@
     if (!document.hidden) maybePull(true);
   });
   window.addEventListener("focus", function () { maybePull(true); });
+  // A internet voltou: o que ficou pendente sobe já, sem esperar a próxima
+  // tentativa marcada.
+  window.addEventListener("online", function () { if (localDirty) schedulePush(); });
 
   // O ritmo da rede de segurança é uma variável, não um intervalo fixo: ele
   // afrouxa sozinho quando o tempo real prova que está entregando.
@@ -6366,8 +6564,10 @@
     var doAparelho = temLocal ? null : readDeviceState();
 
     if (servidor && servidor.tasks.length) {
-      // A conta já tem conteúdo: o servidor é a verdade.
-      state = stateFromServer(servidor);
+      // A conta já tem conteúdo: o servidor é a verdade, menos no que foi
+      // feito AQUI e ainda não subiu (ver mesclarPendentes). Sem cópia local
+      // desta conta não há o que preservar.
+      state = stateFromServer(servidor, !temLocal);
       markServerClean(servidor);
     } else if (doAparelho) {
       // Conta sem tarefas e este navegador tinha um checklist de antes das
@@ -6376,7 +6576,7 @@
       markServerEmpty();
     } else if (servidor && servidor.cats.length) {
       // Conta sem tarefas mas com abas já criadas noutro aparelho: aproveita.
-      state = stateFromServer(servidor);
+      state = stateFromServer(servidor, !temLocal);
       markServerClean(servidor);
     } else if (!temLocal) {
       // Conta nova e aparelho sem nada: começa do zero, com as abas padrão.
@@ -6416,7 +6616,8 @@
       localStorage.removeItem(DEVICE_KEY_LEGACY);
       // As cópias dos apps de empresa guardadas neste aparelho saem também.
       Object.keys(localStorage).forEach(function (k) {
-        if (k.indexOf("checklist_e_") === 0 || k.indexOf(CONSULTOR_KEY) === 0) localStorage.removeItem(k);
+        if (k.indexOf("checklist_e_") === 0 || k.indexOf(CONSULTOR_KEY) === 0 ||
+            k.indexOf("checklist_agenda_") === 0) localStorage.removeItem(k);
       });
     } catch (e) {}
     currentUser = null;
@@ -6971,7 +7172,7 @@
     if (saindoDoEspelho) return;
 
     if (servidor) {
-      state = stateFromServer(servidor);
+      state = stateFromServer(servidor, !temLocal);
       markServerClean(servidor);
     } else if (!temLocal) {
       // Sem servidor e sem cópia: não há o que mostrar, e criar um app vazio
