@@ -1524,7 +1524,7 @@
   // Sobe junto com CACHE_VERSION no sw.js. Serve para eu saber, num print da
   // tela de diagnóstico, qual versão o aparelho dele está rodando de verdade —
   // já perdi tempo debatendo defeito que a versão dele nem tinha ainda.
-  var VERSAO_APP = "v39";
+  var VERSAO_APP = "v40";
 
   /* ---- apps de empresa (20/11/2026) ----
      checklist.html?espelho=<conta> abre o app de uma empresa que esta conta
@@ -1695,34 +1695,12 @@
     if (!parsed.viewingWeek) parsed.viewingWeek = mondayOf(new Date());
     if (typeof parsed.seedVersion !== "number") parsed.seedVersion = 0;
     if (typeof parsed.hardResetVersion !== "number") parsed.hardResetVersion = 0;
-    // Assinatura do que acreditamos que o servidor já tem, para enviar só o
-    // que mudou em vez de reenviar tudo a cada salvamento.
-    if (!parsed.srv || typeof parsed.srv !== "object") parsed.srv = {};
-    if (typeof parsed.srv.profile !== "string") parsed.srv.profile = null;
-    if (!parsed.srv.cats) parsed.srv.cats = {};
-    if (!parsed.srv.tasks) parsed.srv.tasks = {};
-    if (!parsed.srv.checks) parsed.srv.checks = {};
-    if (!parsed.srv.lists) parsed.srv.lists = {};
-    if (!parsed.srv.items) parsed.srv.items = {};
-    if (!parsed.srv.appts) parsed.srv.appts = {};
-
-    // ---- reparo único dos aparelhos que passaram pelas versões até a v18 ----
-    //
-    // Naquelas versões o app marcava como "o servidor já tem" coisa que nunca
-    // tinha subido. Corrigir a causa não desfaz o que ficou GRAVADO: o
-    // aparelho continua achando que já enviou e nunca mais tenta — foi assim
-    // que uma lista existia no celular e não existia no PC.
-    //
-    // Zerar o registro faz tudo ser reenviado. O que o servidor já tem é
-    // regravado por cima com o mesmo id, sem duplicar; e nada é apagado,
-    // porque a remoção só olha o que está no registro, que agora está vazio.
-    if (!parsed.reparoEnvio19) {
-      parsed.srv.lists = {};
-      parsed.srv.items = {};
-      parsed.srv.appts = {};
-      parsed.srv.agendas = {};
-      parsed.reparoEnvio19 = true;
-    }
+    // A fila de mudanças da pessoa (v40): o ÚNICO caminho do aparelho para o
+    // servidor. O registro antigo "srv" (até a v39) fica como veio, só para
+    // migrarRegistroAntigo() ler uma vez e jogar fora. O antigo "reparo" que
+    // zerava esse registro e mandava tudo de novo saiu: era a mesma porta do
+    // defeito de 23/11.
+    if (!parsed.fila || typeof parsed.fila !== "object") parsed.fila = null;
 
     // ---- agenda ----
     // Sem data válida o atendimento não teria dia nenhum onde aparecer; some
@@ -1863,12 +1841,15 @@
   // servidor guarda tudo — nome, tema e abas inclusive —, então toda alteração
   // precisa subir. As chamadas antigas save(true) continuam válidas, o
   // argumento só é ignorado.
+  // v40: antes de gravar, o gesto da pessoa vira linhas na fila de mudanças
+  // (registrarMudancas). É SÓ a fila que sobe para o servidor.
   function save() {
-    if (!STORAGE_KEY) return;
+    if (!STORAGE_KEY || semServidorAtivo) return;
+    registrarMudancas();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    localDirty = true;
+    localDirty = filaTamanho() > 0;
     mudancasLocais++;
-    schedulePush();
+    if (localDirty) schedulePush();
   }
 
   // Persiste sem marcar como pendente — usado depois de um envio bem-sucedido,
@@ -2017,7 +1998,10 @@
   function setScheduleDone(item, monday, weekday, v) {
     if (!item.doneMap[monday]) item.doneMap[monday] = {};
     if (v) item.doneMap[monday][weekday] = true;
-    else delete item.doneMap[monday][weekday];
+    else {
+      delete item.doneMap[monday][weekday];
+      autorizarRemocao("checks", item.id + "|" + monday + "|" + weekday);   // a pessoa desmarcou
+    }
   }
 
   // Todas as ocorrências de um dia concreto, em todas as categorias pedidas.
@@ -2243,6 +2227,7 @@
     var bucket = kind === "schedule" ? state[catId].schedule : state[catId].projects;
     var i = bucket.indexOf(item);
     if (i >= 0) bucket.splice(i, 1);
+    autorizarRemocao("tasks", item.id);   // a pessoa excluiu (as marcações vão junto no banco)
     editingId = null;
     save();
     render();
@@ -2457,6 +2442,7 @@
         // O histórico de marcação da tarefa antiga não migra — não há como
         // mapear marcações de dia da semana para uma data única, e vice-versa.
         removeFromBucket(fromCat, occ.kind, item);
+        autorizarRemocao("tasks", item.id);   // a pessoa trocou o tipo/aba: a antiga sai, a nova entra
         if (draft.kind === "schedule") {
           state[draft.catId].schedule.push(mkScheduleItem({ title: title, note: draft.note.trim(), days: draft.days, time: draft.time }));
         } else {
@@ -2599,7 +2585,12 @@
         }, 2600);
         return;
       }
-      state[catId].schedule.forEach(function (it) { it.doneMap[state.viewingWeek] = {}; });
+      state[catId].schedule.forEach(function (it) {
+        Object.keys(it.doneMap[state.viewingWeek] || {}).forEach(function (wd) {
+          autorizarRemocao("checks", it.id + "|" + state.viewingWeek + "|" + wd);   // a pessoa resetou a semana
+        });
+        it.doneMap[state.viewingWeek] = {};
+      });
       save();
       render();
       showToast("Semana zerada.");
@@ -3003,6 +2994,7 @@
   function excluirLista(l) {
     var i = listas().indexOf(l);
     if (i >= 0) listas().splice(i, 1);
+    autorizarRemocao("lists", l.id);   // a pessoa excluiu (os itens vão junto no banco)
     if (listaAberta === l.id) listaAberta = null;
     itemEditando = null;
     formOpen = false;
@@ -3014,6 +3006,7 @@
   function excluirItem(l, it) {
     var i = l.items.indexOf(it);
     if (i >= 0) l.items.splice(i, 1);
+    autorizarRemocao("items", it.id);
     itemEditando = null;
     save();
     render();
@@ -3654,6 +3647,7 @@
     var i = agendas().indexOf(g);
     if (i >= 0) agendas().splice(i, 1);
     if (agendaSel === g.id) agendaSel = null;
+    autorizarRemocao("agendas", g.id);   // a pessoa excluiu (os atendimentos vão junto no banco)
     save();
     render();
     showToast("Agenda excluída.");
@@ -3669,7 +3663,10 @@
     // criava uma agenda "Agenda" em cada um — e aí o seletor aparecia do nada,
     // com duas agendas de mesmo nome.
     if (!agendasLidas) return;
-    if (!minhasAgendas().length) criarAgenda("Agenda");
+    // v40: só quem não tem agenda NENHUMA (nem própria, nem compartilhada)
+    // ganha a primeira. Quem foi convidado para a agenda de alguém não ganha
+    // uma "Agenda" vazia com o mesmo nome; era ela que confundia a secretária.
+    if (!agendas().length) criarAgenda("Agenda");
     adotarOrfaos();
   }
 
@@ -3686,7 +3683,9 @@
       a.ownerId = a.ownerId || meuId();
       mudou = true;
     });
-    if (mudou) save();
+    // Não é gesto da pessoa: arruma só a tela, nada vai ao servidor. (No banco
+    // todo atendimento já tem agenda desde o 09_agendas_multiplas.sql.)
+    if (mudou) { rebase(); persistQuiet(); }
   }
 
   function rotuloDoDia(iso) {
@@ -3970,6 +3969,7 @@
   function excluirAtendimento(a) {
     var i = agenda().indexOf(a);
     if (i >= 0) agenda().splice(i, 1);
+    autorizarRemocao("appts", a.id);
     atendEditando = null;
     save();
     render();
@@ -4206,8 +4206,14 @@
     }
     var i = agendas().indexOf(g);
     if (i >= 0) agendas().splice(i, 1);
+    // Os atendimentos da agenda DO DONO saem só desta tela. Não é a pessoa
+    // apagando nada: o que estava na fila para eles também sai, e a foto
+    // passa a ser a tela nova (nada disso vira "apagar" no servidor).
+    var f = fila();
+    agenda().forEach(function (a) { if (a.agendaId === g.id) delete f.appts[a.id]; });
     state.agenda = agenda().filter(function (a) { return a.agendaId !== g.id; });
     if (agendaSel === g.id) agendaSel = null;
+    rebase();
     persistQuiet();
     render();
     showToast("Você saiu da agenda.");
@@ -4768,7 +4774,7 @@
       "Se algo estiver estranho, tire um print daqui e me mande. " +
       "Só aparece coisa sua, nada de outra pessoa."));
 
-    var srv = state.srv || {};
+    var fl = fila();
     var L = [];
     L.push("app " + VERSAO_APP);
     L.push("");
@@ -4782,7 +4788,7 @@
       L.push("  " + g.title +
         "  [" + String(g.id).slice(0, 7) + "]" +
         "  " + (ehMinha(g)
-          ? "minha  " + ((srv.agendas || {})[g.id] ? "enviada" : "NAO ENVIADA")
+          ? "minha  " + (fl.agendas[g.id] ? "FALTA ENVIAR" : "ok")
           : "de " + (g.dono || "?") + "  " + (g.canEdit ? "posso editar" : "so olhar")));
     });
     L.push("");
@@ -4793,19 +4799,19 @@
       var g = agendaDe(a.agendaId);
       L.push("  " + (a.name || "?") + "  ->  " +
         (g ? g.title : "SEM AGENDA (" + (a.agendaId || "vazio") + ")") +
-        "  " + ((srv.appts || {})[a.id] ? "enviado" : "NAO ENVIADO"));
+        "  " + (fl.appts[a.id] ? "FALTA ENVIAR" : "ok"));
     });
     L.push("");
 
     L.push("LISTAS (" + listas().length + ")");
     listas().forEach(function (l) {
       L.push("  " + l.title + "  " + l.items.length + " itens  " +
-        ((srv.lists || {})[l.id] ? "enviada" : "NAO ENVIADA"));
+        (fl.lists[l.id] ? "FALTA ENVIAR" : "ok"));
     });
     L.push("");
 
     L.push("SINCRONISMO");
-    L.push("  falta enviar algo: " + (localDirty ? "SIM" : "nao"));
+    L.push("  mudancas esperando envio: " + filaTamanho());
     L.push("  falhas seguidas:   " + falhasSeguidas);
     L.push("  agendas lidas do servidor: " + (agendasLidas ? "sim" : "NAO"));
     L.push("  agenda no ar: " + (agendaOk ? "sim" : "NAO") + "   listas no ar: " + (listasOk ? "sim" : "NAO"));
@@ -4980,6 +4986,7 @@
     }
     delete state[c.id];
     state.categories = cats().filter(function (x) { return x.id !== c.id; });
+    autorizarRemocao("cats", c.id);   // a pessoa excluiu a aba (o que ficou nela vai junto no banco)
     if (state.activeTab === c.id) state.activeTab = OVERVIEW_ID;
     pendingDelete = null;
     pendingPalette = null;
@@ -5222,8 +5229,12 @@
     return;
   }
 
+  // Todo pedido diz qual versão do app está falando. O banco
+  // (supabase/15_so_app_novo.sql) recusa gravação de versão anterior à v40:
+  // eram elas que podiam reenviar a cópia velha por cima do servidor.
   var sb = window.supabase.createClient(SUPA_URL, SUPA_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+    global: { headers: { "x-checklist-app": VERSAO_APP } }
   });
 
   var currentUser = null;
@@ -5385,84 +5396,263 @@
     });
   }
 
-  function sameFps(want, have, direto) {
-    var a = Object.keys(want), b = Object.keys(have);
-    if (a.length !== b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (!(a[i] in have)) return false;
-      if (!direto && have[a[i]] !== fpOf(want[a[i]])) return false;
-    }
-    return true;
+  /* =========================================================
+     FILA DE MUDANÇAS (v40, 23/11/2026)
+
+     A regra, pedida por ele: NADA é gravado no servidor que a própria
+     pessoa não tenha feito neste aparelho, e nada é apagado ou alterado sem
+     que a pessoa tenha apagado ou alterado.
+
+     Até a v39 o app comparava a cópia inteira do aparelho com um registro do
+     "que o servidor já tem" e enviava a diferença. Bastava esse registro
+     ficar errado (uma busca que falhou na abertura o zerava) para o aparelho
+     reenviar a cópia inteira, velha, por cima do servidor: desfazia o que
+     outras pessoas tinham mudado e trazia de volta o que elas tinham apagado.
+     Foi o que aconteceu na agenda da Mana em 23/11, às 9h13.
+
+     Agora cada gesto da pessoa vira uma linha numa fila guardada no aparelho:
+     "criou X", "mudou SÓ a hora de Y", "apagou Z". O envio manda a fila e mais
+     nada. Alterar manda só o campo alterado, nunca a linha inteira; e alterar
+     algo que outra pessoa apagou não traz a linha de volta.
+     ========================================================= */
+
+  var GRUPOS_FILA = ["cats", "tasks", "checks", "lists", "items", "agendas", "appts"];
+
+  function novaFila() {
+    return { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, agendas: {}, appts: {} };
+  }
+  function fila() {
+    if (!state.fila || typeof state.fila !== "object") state.fila = novaFila();
+    GRUPOS_FILA.forEach(function (g) { if (!state.fila[g]) state.fila[g] = {}; });
+    return state.fila;
+  }
+  function filaTamanho() {
+    var f = fila(), n = f.profile ? 1 : 0;
+    GRUPOS_FILA.forEach(function (g) { n += Object.keys(f[g]).length; });
+    return n;
+  }
+  function copiaDe(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
+  function mesmoValor(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+
+  // Só os campos que mudaram de verdade, e só os que já existiam antes (um
+  // campo que sumiu do envio, como uma coluna que o banco não tem, não conta).
+  function camposMudados(antes, depois) {
+    if (!antes || !depois) return null;
+    var m = null;
+    Object.keys(depois).forEach(function (k) {
+      if (!(k in antes) || mesmoValor(antes[k], depois[k])) return;
+      (m = m || {})[k] = copiaDe(depois[k]);
+    });
+    return m;
   }
 
-  // Registra o que o servidor REALMENTE tem — não o que está na tela.
-  //
-  // A diferença é o defeito que fazia agenda e lista nova sumirem ao fechar e
-  // abrir. O estado da tela mistura duas coisas: o que veio do servidor e o
-  // que foi criado aqui e ainda não subiu (preservado por
-  // preservarNaoEnviados). Marcar tudo como "o servidor já tem" fazia o app
-  // parar de tentar enviar o que nunca chegou lá — e, na abertura seguinte,
-  // concluir que o servidor tinha apagado de propósito e jogar fora.
-  //
-  // Recebe a resposta da busca para saber quais linhas vieram MESMO de lá.
-  function markServerClean(d) {
-    var want = desiredRows();
-    var srv = { profile: fpOf(want.profile), cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {}, agendas: {} };
-    var faltaSubir = false;
+  // Item de lista e atendimento levam junto a lista/agenda deles em toda
+  // alteração: o banco confere a permissão por elas.
+  function identidadeDaLinha(g, op, linha) {
+    if (!op || !linha) return;
+    if (g === "items" && linha.list_id) op.ident = { list_id: linha.list_id };
+    if (g === "appts" && linha.agenda_id) op.ident = { agenda_id: linha.agenda_id };
+  }
 
-    // Abas, tarefas e marcações: o que mesclarPendentes manteve daqui NÃO
-    // está no servidor — fica com o registro antigo (diferente do que está na
-    // tela) para o próximo envio mandar. Marcar tudo como enviado aqui era
-    // repetir o defeito que já tinha acontecido com as listas.
-    var m = mesclaPendente || { srvAntes: { cats: {}, tasks: {} }, cats: {}, catsApagadas: {},
-                                 tarefas: {}, tarefasApagadas: {}, checksNovos: {}, checksTirados: {} };
-    mesclaPendente = null;
-    function pendente(grupo, antes, id) {
-      faltaSubir = true;
-      if (antes[id] !== undefined) srv[grupo][id] = antes[id];
-    }
-    Object.keys(want.cats).forEach(function (id) {
-      if (m.cats[id]) pendente("cats", m.srvAntes.cats, id);
-      else srv.cats[id] = fpOf(want.cats[id]);
-    });
-    Object.keys(m.catsApagadas).forEach(function (id) { pendente("cats", m.srvAntes.cats, id); });
-    Object.keys(want.tasks).forEach(function (id) {
-      if (m.tarefas[id]) pendente("tasks", m.srvAntes.tasks, id);
-      else srv.tasks[id] = fpOf(want.tasks[id]);
-    });
-    Object.keys(m.tarefasApagadas).forEach(function (id) { pendente("tasks", m.srvAntes.tasks, id); });
-    Object.keys(want.checks).forEach(function (k) {
-      if (m.checksNovos[k]) faltaSubir = true;
-      else srv.checks[k] = 1;
-    });
-    Object.keys(m.checksTirados).forEach(function (k) { srv.checks[k] = 1; faltaSubir = true; });
+  // A foto da tela logo depois do último gesto da pessoa (ou da última leitura
+  // do servidor). O gesto seguinte é a diferença entre ela e a tela nova.
+  var baseLinhas = null;
 
-    var veio = { lists: {}, items: {}, appts: {}, agendas: {} };
-    if (d) {
-      (d.lists || []).forEach(function (x) { veio.lists[x.id] = true; });
-      (d.items || []).forEach(function (x) { veio.items[x.id] = true; });
-      (d.appts || []).forEach(function (x) { veio.appts[x.id] = true; });
-      (d.listaAgendas || []).forEach(function (x) { veio.agendas[x.id] = true; });
+  // Apagar só vira pedido ao servidor se a PESSOA apagou. Linha que some da
+  // tela por outro motivo (saiu da agenda de alguém, o servidor recusou,
+  // perdeu o acesso, a tarefa foi junto com a aba) não vira "apagar".
+  var remocoesAutorizadas = {};
+  function autorizarRemocao(grupo, id) {
+    (remocoesAutorizadas[grupo] = remocoesAutorizadas[grupo] || {})[String(id)] = true;
+  }
+
+  // Depois de qualquer troca do estado que NÃO foi gesto da pessoa (leitura
+  // do servidor, abertura, recusa), a foto passa a ser a tela atual.
+  function rebase() {
+    baseLinhas = desiredRows();
+    remocoesAutorizadas = {};
+  }
+
+  function linhasVazias() {
+    return { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {}, agendas: {} };
+  }
+
+  // Chamado por save(): transforma o gesto da pessoa em linhas da fila.
+  function registrarMudancas() {
+    if (!baseLinhas) { rebase(); return; }
+    var agora = desiredRows(), f = fila(), antes = baseLinhas;
+
+    if (antes.profile) {
+      var pm = camposMudados(antes.profile, agora.profile);
+      if (pm) {
+        if (!f.profile) f.profile = { op: "alterar", campos: {}, v: 0 };
+        Object.assign(f.profile.campos, pm);
+        f.profile.v++;
+      }
+    } else if (agora.profile) {
+      // conta nova: o perfil existe no servidor desde o cadastro, com padrões
+      f.profile = { op: "alterar", campos: copiaDe(agora.profile), v: ((f.profile && f.profile.v) || 0) + 1 };
     }
 
-    ["lists", "items", "appts", "agendas"].forEach(function (grupo) {
-      Object.keys(want[grupo]).forEach(function (id) {
-        // Sem a resposta da busca em mãos, mantém o comportamento antigo.
-        if (!d || veio[grupo][id]) srv[grupo][id] = fpOf(want[grupo][id]);
-        else faltaSubir = true;
+    GRUPOS_FILA.forEach(function (g) {
+      var a = antes[g] || {}, d = agora[g] || {}, ops = f[g];
+      Object.keys(d).forEach(function (id) {
+        var op = ops[id];
+        if (!(id in a)) {
+          // desfez um apagar que ainda nem foi tentado (desmarcou e marcou de novo)
+          if (op && op.op === "apagar" && !op.tentado) { delete ops[id]; return; }
+          ops[id] = { op: "criar", campos: copiaDe(d[id]), v: ((op && op.v) || 0) + 1 };
+          return;
+        }
+        var mud = camposMudados(a[id], d[id]);
+        // A posição de lista, item e agenda é a ordem em que nasceram. Ela
+        // "muda" sozinha quando outra some da tela (a numeração anda), e isso
+        // não é gesto de ninguém: não sobe. (Abas têm setas de reordenar, e lá
+        // a posição é gesto da pessoa.)
+        if (mud && (g === "lists" || g === "items" || g === "agendas")) {
+          delete mud.sort_order;
+          if (!Object.keys(mud).length) mud = null;
+        }
+        if (!mud) return;
+        if (op && (op.op === "criar" || op.op === "alterar")) {
+          Object.assign(op.campos, mud);
+          op.v++;
+        } else {
+          ops[id] = { op: "alterar", campos: mud, v: ((op && op.v) || 0) + 1 };
+        }
+        identidadeDaLinha(g, ops[id], d[id]);
+      });
+      Object.keys(a).forEach(function (id) {
+        if (id in d) return;
+        if (!(remocoesAutorizadas[g] && remocoesAutorizadas[g][id])) return;
+        var op = ops[id];
+        if (op && op.op === "criar" && !op.tentado) { delete ops[id]; return; }   // nunca chegou lá
+        ops[id] = { op: "apagar", campos: copiaDe(a[id]), v: ((op && op.v) || 0) + 1 };
       });
     });
 
-    state.srv = srv;
-    // O que ficou de fora precisa subir — e agora o app sabe disso.
-    localDirty = faltaSubir;
-    if (faltaSubir) schedulePush();
+    baseLinhas = agora;
+    remocoesAutorizadas = {};
   }
 
-  // Registra que o servidor não tem nada nosso — tudo precisa subir.
-  function markServerEmpty() {
-    state.srv = { profile: null, cats: {}, tasks: {}, checks: {}, lists: {}, items: {}, appts: {}, agendas: {} };
-    localDirty = true;
+  // ---- aparelhos que vinham da v39: o registro antigo vira fila ----
+  // Só entra o que dá para AFIRMAR que foi feito aqui e ainda não subiu:
+  // campo diferente do que o servidor confirmou, e linha mais nova que tudo
+  // o que ele confirmou. Apagado pendente NÃO entra (não dá para saber se foi
+  // a pessoa), e registro vazio não gera nada (era o caso do defeito).
+  function migrarRegistroAntigo() {
+    var srv = state.srv;
+    delete state.srv;
+    delete state.reparoEnvio19;
+    if (!srv || typeof srv !== "object") return;
+    var f = fila();
+    if (filaTamanho()) return;
+    var agora = desiredRows();
+    function ler(s) { try { return typeof s === "string" ? JSON.parse(s) : null; } catch (e) { return null; } }
+    var pAntes = ler(srv.profile), pm = pAntes && camposMudados(pAntes, agora.profile);
+    if (pm) f.profile = { op: "alterar", campos: pm, v: 1 };
+    GRUPOS_FILA.forEach(function (g) {
+      var reg = srv[g] || {}, d = agora[g] || {};
+      var conhecidos = Object.keys(reg);
+      if (!conhecidos.length) return;
+      var maisNovo = 0;
+      conhecidos.forEach(function (id) {
+        var r = ler(reg[id]), t = r && Date.parse(r.created_at);
+        if (t > maisNovo) maisNovo = t;
+      });
+      Object.keys(d).forEach(function (id) {
+        if (id in reg) {
+          if (g === "checks") return;
+          var m = camposMudados(ler(reg[id]), d[id]);
+          if (m) { f[g][id] = { op: "alterar", campos: m, v: 1 }; identidadeDaLinha(g, f[g][id], d[id]); }
+          return;
+        }
+        var nasceu = Date.parse(d[id].created_at);
+        if (g === "checks" || (nasceu && nasceu > maisNovo)) f[g][id] = { op: "criar", campos: copiaDe(d[id]), v: 1 };
+      });
+    });
+  }
+
+  // ---- a leitura do servidor com a fila por cima ----
+  // O servidor é a verdade, mais o que a pessoa fez aqui e ainda não subiu.
+  function aplicarFila(d) {
+    var f = fila();
+    if (f.profile && d.profile) Object.assign(d.profile, copiaDe(f.profile.campos));
+    function porId(r) { return String(r.id); }
+    semLugarParaCair(d, f);
+    aplicarNoGrupo(d.cats, f.cats, porId);
+    aplicarNoGrupo(d.tasks, f.tasks, porId);
+    aplicarNoGrupo(d.checks, f.checks, function (r) { return r.task_id + "|" + r.week_monday + "|" + r.weekday; });
+    aplicarNoGrupo(d.lists, f.lists, porId);
+    aplicarNoGrupo(d.items, f.items, porId);
+    aplicarNoGrupo(d.listaAgendas, f.agendas, porId);
+    aplicarNoGrupo(d.appts, f.appts, porId);
+    return d;
+  }
+  // Criação que aponta para algo que outra pessoa apagou (marcação de uma
+  // tarefa apagada, atendimento numa agenda excluída, item numa lista
+  // excluída, tarefa numa aba excluída): não tem onde cair. Sai da fila em
+  // vez de insistir com o banco, e a pessoa fica sabendo do que se perdeu.
+  function semLugarParaCair(d, f) {
+    function ids(linhas) {
+      if (!Array.isArray(linhas)) return null;
+      var s = {};
+      linhas.forEach(function (r) { s[String(r.id)] = true; });
+      return s;
+    }
+    function criadosAqui(ops) {
+      var s = {};
+      Object.keys(ops).forEach(function (id) { if (ops[id].op === "criar") s[id] = true; });
+      return s;
+    }
+    var perdidos = 0;
+    function conferir(ops, pai, existentes, novosPai, avisar) {
+      if (!existentes) return;                       // não deu para ler: decide depois
+      Object.keys(ops).forEach(function (id) {
+        var op = ops[id];
+        if (op.op !== "criar") return;
+        var p = String(op.campos[pai]);
+        if (existentes[p] || novosPai[p]) return;
+        delete ops[id];
+        if (avisar) perdidos++;
+      });
+    }
+    var tarefas = ids(d.tasks), abas = ids(d.cats), listasLidas = ids(d.lists), agendasLidas2 = ids(d.listaAgendas);
+    conferir(f.checks, "task_id", tarefas, criadosAqui(f.tasks), false);
+    conferir(f.tasks, "category_id", abas, criadosAqui(f.cats), true);
+    conferir(f.items, "list_id", listasLidas, criadosAqui(f.lists), true);
+    conferir(f.appts, "agenda_id", agendasLidas2, criadosAqui(f.agendas), true);
+    if (perdidos) {
+      showToast(perdidos === 1
+        ? "Uma coisa que você criou não pôde ser salva: a aba, lista ou agenda dela foi apagada em outro aparelho."
+        : perdidos + " coisas que você criou não puderam ser salvas: a aba, lista ou agenda delas foi apagada em outro aparelho.");
+    }
+  }
+
+  function aplicarNoGrupo(linhas, ops, chave) {
+    if (!Array.isArray(linhas)) return;          // não deu para ler: nada a decidir agora
+    var idx = {};
+    linhas.forEach(function (r) { idx[chave(r)] = r; });
+    Object.keys(ops).forEach(function (id) {
+      var op = ops[id], r = idx[id];
+      if (op.op === "apagar") {
+        if (r) linhas.splice(linhas.indexOf(r), 1);
+      } else if (op.op === "criar") {
+        if (r) Object.assign(r, copiaDe(op.campos)); else linhas.push(copiaDe(op.campos));
+      } else if (r) {
+        Object.assign(r, copiaDe(op.campos));
+      } else {
+        // Alterar algo que não existe mais no servidor (outra pessoa apagou,
+        // ou o acesso foi tirado): a mudança não tem onde cair e NÃO pode
+        // recriar a linha.
+        delete ops[id];
+      }
+    });
+  }
+
+  // O que a tela mostra, para a busca saber se algo mudou de verdade.
+  function assinaturaDaTela() {
+    return JSON.stringify(desiredRows()) + fpDoQueEhDosOutros(state);
   }
 
   /* ---------- envio ---------- */
@@ -5471,6 +5661,7 @@
   var pushing = false;
   var pushQueued = false;
   var falhasSeguidas = 0;
+  var novaTentativaTimer = null;
 
   function schedulePush() {
     if (!currentUser) return;
@@ -5478,36 +5669,24 @@
     pushTimer = window.setTimeout(runPush, 800);
   }
 
-  var novaTentativaTimer = null;
-
   async function runPush() {
     if (!currentUser || pushing) { if (pushing) pushQueued = true; return; }
+    if (!filaTamanho()) { localDirty = false; return; }
     pushing = true;
     window.clearTimeout(novaTentativaTimer);
-    var mudancasAntes = mudancasLocais;
     try {
       await pushOnce();
-      // O que a pessoa fez ENQUANTO o envio ia não estava nele. Zerar o
-      // pendente nesse caso abria uma janela para uma busca chegar, achar o
-      // app "em dia" e levar a marcação recém-feita (o envio dela já está
-      // agendado pelo save).
-      if (mudancasLocais === mudancasAntes) localDirty = false;
       enviosFeitos++;
+      localDirty = filaTamanho() > 0;
       persistQuiet();
       falhasSeguidas = 0;
     } catch (e) {
-      // Sem internet ou erro do servidor: a cópia local continua válida e o
-      // que ficou pendente sobe na próxima tentativa. Nada se perde.
+      // Sem internet ou servidor sem responder: a fila continua guardada no
+      // aparelho e sobe na próxima tentativa. Nada se perde.
       persistQuiet();
       falhasSeguidas++;
-      // Até a v38 não havia próxima tentativa: o app esperava a pessoa mexer
-      // em alguma coisa, e enquanto isso também não buscava nada (a busca
-      // espera o pendente subir). Agora tenta de novo sozinho, cada vez com
-      // mais calma: 5 s, 10 s, 20 s, 40 s e depois a cada minuto.
       var espera = Math.min(60000, 5000 * Math.pow(2, falhasSeguidas - 1));
-      novaTentativaTimer = window.setTimeout(function () { if (localDirty) schedulePush(); }, espera);
-      // Falhar calado foi o que deixou o problema invisível: o app parecia
-      // salvo e não estava. Avisa uma vez, sem ficar repetindo a cada tentativa.
+      novaTentativaTimer = window.setTimeout(function () { if (filaTamanho()) schedulePush(); }, espera);
       if (falhasSeguidas === 3) {
         console.warn("[checklist] envio falhando:", (e && e.message) || e);
         showToast("Não estou conseguindo salvar no servidor. Seus dados estão seguros aqui no aparelho.");
@@ -5517,309 +5696,267 @@
     if (pushQueued) { pushQueued = false; schedulePush(); }
   }
 
+  // Erro em que não chegou resposta do banco (rede, tempo, token vencendo):
+  // a fila fica e tenta de novo. Erro COM resposta do banco é recusa: tentar
+  // de novo não muda nada, então aquela linha sai da fila, com aviso.
+  function erroTransitorio(e) {
+    if (!e) return false;
+    var c = String(e.code || ""), m = String(e.message || e).toLowerCase();
+    if (!c) return true;
+    if (/^PGRST3/.test(c)) return true;
+    if (["57014", "08000", "08001", "08003", "08006", "53300", "57P01", "57P03", "40001", "40P01"].indexOf(c) !== -1) return true;
+    return /failed to fetch|networkerror|network request|timeout|jwt/.test(m);
+  }
+
+  // A linha foi aceita. Se a pessoa mexeu nela de novo enquanto o pedido ia,
+  // fica na fila só o que ainda não foi enviado.
+  function concluirOp(g, id, enviado) {
+    var f = fila();
+    var atual = g === "profile" ? f.profile : f[g][id];
+    if (!atual) return;
+    function tirar() { if (g === "profile") f.profile = null; else delete f[g][id]; }
+    if (atual.v === enviado.v) { tirar(); return; }
+    if (atual.op === "apagar" || enviado.op === "apagar") return;
+    if (atual.op === "criar") { identidadeDaLinha(g, atual, atual.campos); atual.op = "alterar"; }
+    var resto = {};
+    Object.keys(atual.campos).forEach(function (k) {
+      if (!(k in enviado.campos) || !mesmoValor(enviado.campos[k], atual.campos[k])) resto[k] = atual.campos[k];
+    });
+    atual.campos = resto;
+    if (!Object.keys(resto).length) tirar();
+  }
+
   // A ordem importa por causa das ligações entre as tabelas: a tarefa aponta
-  // para a aba e a marcação aponta para a tarefa. Criar segue aba → tarefa →
-  // marcação; apagar segue o caminho inverso.
+  // para a aba, a marcação para a tarefa, o atendimento para a agenda. Criar
+  // segue aba → tarefa → marcação; apagar segue o caminho inverso. Apagar a
+  // aba, a lista ou a agenda leva junto (no banco) o que está dentro delas.
   async function pushOnce() {
     var uidv = currentUser.id;
-    var want = desiredRows();
-    var srv = state.srv;
-    // No app de uma empresa, cada gravação abaixo vira uma chamada às funções
-    // de espelho do banco (bancoEspelho), com a mesma ordem e as mesmas
-    // respostas. Fora dele, é o banco de sempre.
+    // No app de uma empresa, cada pedido vira uma chamada às funções de
+    // espelho do banco (bancoEspelho), com as mesmas respostas de erro.
     var db = ESPELHO ? bancoEspelho : sb;
+    var f = fila();
+    var recusas = [];
 
-    function owned(o) {
-      var copy = Object.assign({}, o);
-      copy.user_id = uidv;
-      return copy;
+    async function pedir(p) {
+      var r = await p;
+      r = r || { error: null };
+      if (r.error && erroTransitorio(r.error)) throw r.error;
+      return r;
     }
-    function fail(r) { if (r && r.error) throw r.error; return r; }
-
-    /* ---- criar e alterar são chamadas diferentes ----
-
-       As tabelas antigas (categories, tasks) têm uma regra de segurança só,
-       valendo para tudo, e aceitam o comando "cria-ou-altera" numa tacada.
-       As novas (lists, agendas, appointments) têm regra separada por comando —
-       uma para criar, outra para alterar — e nelas o "cria-ou-altera" é
-       avaliado como alteração de uma linha que ainda não existe: o banco
-       recusa com violação de segurança.
-
-       Foi ISSO que impediu qualquer lista, agenda ou atendimento de nascer no
-       servidor. Aqui a criação e a alteração viram chamadas distintas, e o
-       "já existe" (23505) leva para a alteração. */
-
-    async function gravarLinha(tabela, linha, jaNoServidor) {
-      if (!jaNoServidor) {
-        var novo = await db.from(tabela).insert(linha);
-        if (!novo.error) return novo;
-        if (novo.error.code !== "23505") return novo;   // erro de verdade
-        // 23505 = já está lá: segue para alterar
+    function dono(o) { var c = Object.assign({}, o); c.user_id = uidv; return c; }
+    function igual(o) { return Object.assign({}, o); }
+    function comTipo(g, tipo) { return Object.keys(f[g]).filter(function (id) { return f[g][id].op === tipo; }); }
+    function marcar(g, ids) {
+      var s = {};
+      ids.forEach(function (id) { s[id] = copiaDe(f[g][id]); f[g][id].tentado = true; });
+      return s;
+    }
+    function recusar(g, id, e) {
+      if (g === "lists" && e.code === "P0001") { recusarLista(id, e.message); return; }
+      if (g === "agendas" && e.code === "P0001") { recusarAgenda(id, e.message); return; }
+      if (g === "profile") f.profile = null; else delete f[g][id];
+      recusas.push(e);
+    }
+    // Coluna nova que um banco antigo ainda não tem (cor, confirmado, aviso
+    // da agenda): sai a coluna, não a linha.
+    function semColunasFaltando(g, linha) {
+      var c = Object.assign({}, linha);
+      if (g === "lists" && !colunaCorLista) delete c.palette;
+      if (g === "agendas" && !colunaCorAgenda) delete c.palette;
+      if (g === "appts" && !colunaConfirmado) delete c.confirmed;
+      if (g === "profile" && !colunaAvisoAgenda) delete c.notif_agenda;
+      return c;
+    }
+    function desligarColuna(g, e) {
+      if (!tabelaFaltando(e)) return false;
+      if (g === "lists" && colunaCorLista) { colunaCorLista = false; return true; }
+      if (g === "agendas" && colunaCorAgenda) { colunaCorAgenda = false; return true; }
+      if (g === "appts" && colunaConfirmado) { colunaConfirmado = false; return true; }
+      if (g === "profile" && colunaAvisoAgenda) { colunaAvisoAgenda = false; return true; }
+      return false;
+    }
+    function tabelaInteiraFalta(g, e) {
+      if (!tabelaFaltando(e)) return false;
+      if (g === "lists" || g === "items") { listasOk = false; return true; }
+      if (g === "agendas" || g === "appts") { agendaOk = false; return true; }
+      return false;
+    }
+    function inserir(tabela, linhas) {
+      if (tabela === "task_checks") {
+        return db.from(tabela).upsert(linhas, { onConflict: "user_id,task_id,week_monday,weekday", ignoreDuplicates: true });
       }
-      return await db.from(tabela).update(linha).eq("id", linha.id);
+      // No espelho, aba e tarefa só existem como "gravar"; para linha nova é o mesmo que criar.
+      if (ESPELHO && (tabela === "categories" || tabela === "tasks")) return db.from(tabela).upsert(linhas);
+      return db.from(tabela).insert(linhas);
     }
 
-    // Em lote quando dá, uma a uma quando alguma já existe. Sem isto, a
-    // primeira sincronização de quem tem muita coisa viraria centenas de
-    // chamadas.
-    async function gravarLinhas(tabela, linhas) {
-      if (!linhas.length) return { error: null };
-      var lote = await db.from(tabela).insert(linhas);
-      if (!lote.error) return lote;
-      if (lote.error.code !== "23505") return lote;
-      for (var i = 0; i < linhas.length; i++) {
-        var r = await gravarLinha(tabela, linhas[i], false);
-        if (r.error) return r;
+    async function criar(g, tabela, montar, umPorVez) {
+      var ids = comTipo(g, "criar");
+      if (!ids.length) return;
+      var s = marcar(g, ids);
+      function linha(id) { return semColunasFaltando(g, montar(s[id].campos)); }
+      if (!umPorVez && ids.length > 1) {
+        var lote = await pedir(inserir(tabela, ids.map(linha)));
+        if (!lote.error) { ids.forEach(function (id) { concluirOp(g, id, s[id]); }); return; }
       }
-      return { error: null };
-    }
-
-    // O que EXISTE aqui, sem passar pelo filtro de permissão.
-    //
-    // As remoções lá embaixo têm que sair DESTA lista, e não de "want".
-    // "want" é o que eu POSSO enviar — ele exclui, por exemplo, atendimento
-    // de uma agenda que não está carregada neste instante. Se a remoção
-    // saísse de "want", bastava uma agenda faltar por um segundo para os
-    // atendimentos dela serem APAGADOS DO SERVIDOR para sempre, sem ninguém
-    // ter pedido. Só some do servidor o que a pessoa realmente apagou daqui.
-    var aqui = { lists: {}, items: {}, appts: {}, agendas: {} };
-    listas().forEach(function (l) {
-      aqui.lists[l.id] = true;
-      (l.items || []).forEach(function (it) { aqui.items[it.id] = true; });
-    });
-    agenda().forEach(function (a) { aqui.appts[a.id] = true; });
-    agendas().forEach(function (g) { aqui.agendas[g.id] = true; });
-
-    // 1. perfil (nome e tema)
-    var pfp = fpOf(want.profile);
-    if (srv.profile !== pfp) {
-      var rp = await db.from("profiles").upsert(Object.assign({ id: uidv }, want.profile));
-      if (rp.error && colunaAvisoAgenda && tabelaFaltando(rp.error)) {
-        // O banco ainda não tem a coluna do aviso da agenda. Desliga esse
-        // pedaço e manda o perfil sem ele — em vez de deixar o sincronismo
-        // inteiro parado esperando um SQL que talvez demore a ser rodado.
-        colunaAvisoAgenda = false;
-        want = desiredRows();
-        pfp = fpOf(want.profile);
-        rp = await db.from("profiles").upsert(Object.assign({ id: uidv }, want.profile));
+      for (var i = 0; i < ids.length; i++) {
+        var id = ids[i];
+        if (!f[g][id]) continue;
+        var r = await pedir(inserir(tabela, [linha(id)]));
+        if (r.error && desligarColuna(g, r.error)) r = await pedir(inserir(tabela, [linha(id)]));
+        if (r.error && tabelaInteiraFalta(g, r.error)) return "parar";
+        // 23505 = já está lá (um envio anterior chegou e a resposta não): não sobrescreve
+        if (!r.error || r.error.code === "23505") concluirOp(g, id, s[id]);
+        else recusar(g, id, r.error);
       }
-      fail(rp);
-      srv.profile = pfp;
     }
 
-    // 2. abas novas ou alteradas
-    var catPend = [];
-    Object.keys(want.cats).forEach(function (id) {
-      var fp = fpOf(want.cats[id]);
-      if (srv.cats[id] !== fp) catPend.push([id, fp, owned(want.cats[id])]);
-    });
-    if (catPend.length) {
-      fail(await db.from("categories").upsert(catPend.map(function (p) { return p[2]; })));
-      catPend.forEach(function (p) { srv.cats[p[0]] = p[1]; });
-    }
-
-    // 3. tarefas novas ou alteradas
-    var taskPend = [];
-    Object.keys(want.tasks).forEach(function (id) {
-      var fp = fpOf(want.tasks[id]);
-      if (srv.tasks[id] !== fp) taskPend.push([id, fp, owned(want.tasks[id])]);
-    });
-    if (taskPend.length) {
-      fail(await db.from("tasks").upsert(taskPend.map(function (p) { return p[2]; })));
-      taskPend.forEach(function (p) { srv.tasks[p[0]] = p[1]; });
-    }
-
-    // 4. marcações novas
-    var checkNew = Object.keys(want.checks).filter(function (k) { return !srv.checks[k]; });
-    if (checkNew.length) {
-      fail(await db.from("task_checks").upsert(checkNew.map(function (k) { return owned(want.checks[k]); })));
-      checkNew.forEach(function (k) { srv.checks[k] = 1; });
-    }
-
-    // 5. marcações removidas (desmarcar uma tarefa, resetar a semana)
-    var checkGone = Object.keys(srv.checks).filter(function (k) { return !want.checks[k]; });
-    if (checkGone.length) {
-      var res = await Promise.all(checkGone.map(function (k) {
-        var p = k.split("|");
-        return db.from("task_checks").delete()
-          .eq("task_id", p[0]).eq("week_monday", p[1]).eq("weekday", Number(p[2]));
-      }));
-      res.forEach(fail);
-      checkGone.forEach(function (k) { delete srv.checks[k]; });
-    }
-
-    // 6. tarefas removidas
-    var taskGone = Object.keys(srv.tasks).filter(function (id) { return !want.tasks[id]; });
-    if (taskGone.length) {
-      fail(await db.from("tasks").delete().in("id", taskGone));
-      taskGone.forEach(function (id) { delete srv.tasks[id]; });
-    }
-
-    // 7. abas removidas, por último — apagar a aba leva junto o que sobrou dela
-    var catGone = Object.keys(srv.cats).filter(function (id) { return !want.cats[id]; });
-    if (catGone.length) {
-      fail(await db.from("categories").delete().in("id", catGone));
-      catGone.forEach(function (id) { delete srv.cats[id]; });
-    }
-
-    if (!listasOk) return;
-
-    // 8. listas novas ou alteradas — UMA A UMA de propósito. O banco recusa a
-    //    sexta lista, e num lote eu não saberia qual foi recusada: o erro
-    //    derrubaria as outras junto.
-    var lids = Object.keys(want.lists);
-    for (var li = 0; li < lids.length; li++) {
-      var lid = lids[li];
-      var lfp = fpOf(want.lists[lid]);
-      if (srv.lists[lid] === lfp) continue;
-      var linhaL = want.lists[lid];
-      if (!colunaCorLista) { linhaL = Object.assign({}, linhaL); delete linhaL.palette; }
-      // Mesmo cuidado das agendas: registra o que foi de fato enviado, não o
-      // que se queria enviar — senão uma cor recusada pelo banco fica marcada
-      // como sincronizada e nunca mais é tentada de novo.
-      var enviadoL = linhaL;
-      var rl = await gravarLinha("lists", linhaL, !!srv.lists[lid]);
-      if (rl.error && colunaCorLista && tabelaFaltando(rl.error)) {
-        colunaCorLista = false;
-        enviadoL = Object.assign({}, linhaL); delete enviadoL.palette;
-        rl = await gravarLinha("lists", enviadoL, !!srv.lists[lid]);
+    async function alterar(g, tabela) {
+      var ids = comTipo(g, "alterar");
+      if (!ids.length) return;
+      var s = marcar(g, ids);
+      for (var i = 0; i < ids.length; i++) {
+        var id = ids[i], op = s[id];
+        var fixos = Object.assign({ id: id }, op.ident || {});
+        var campos = semColunasFaltando(g, Object.assign({}, op.campos, fixos));
+        if (Object.keys(campos).length <= Object.keys(fixos).length) { concluirOp(g, id, op); continue; }
+        var r = await pedir(db.from(tabela).update(campos).eq("id", id));
+        if (r.error && desligarColuna(g, r.error)) {
+          campos = semColunasFaltando(g, campos);
+          r = await pedir(db.from(tabela).update(campos).eq("id", id));
+        }
+        if (r.error && ESPELHO && r.error.code === "22023" && (g === "cats" || g === "tasks")) {
+          // Banco ainda sem o 15_*.sql: o espelho só sabe gravar a linha
+          // inteira dessas duas tabelas. Vai a linha como está na tela.
+          var cheia = desiredRows()[g][id];
+          r = cheia ? await pedir(db.from(tabela).upsert(cheia)) : { error: null };
+        }
+        if (r.error && tabelaInteiraFalta(g, r.error)) return "parar";
+        if (!r.error) concluirOp(g, id, op); else recusar(g, id, r.error);
       }
-      if (rl.error) {
-        if (tabelaFaltando(rl.error)) { listasOk = false; return; }
-        if (rl.error.code === "P0001") { recusarLista(lid, rl.error.message); continue; }
-        throw rl.error;
+    }
+
+    async function apagar(g, tabela) {
+      var ids = comTipo(g, "apagar");
+      if (!ids.length) return;
+      var s = marcar(g, ids);
+      var r = await pedir(db.from(tabela).delete().in("id", ids));
+      if (r.error && tabelaInteiraFalta(g, r.error)) return "parar";
+      ids.forEach(function (id) { if (!r.error) concluirOp(g, id, s[id]); else recusar(g, id, r.error); });
+    }
+
+    async function apagarMarcacoes() {
+      var ids = comTipo("checks", "apagar");
+      if (!ids.length) return;
+      var s = marcar("checks", ids);
+      for (var i = 0; i < ids.length; i++) {
+        var c = s[ids[i]].campos;
+        var r = await pedir(db.from("task_checks").delete()
+          .eq("task_id", c.task_id).eq("week_monday", c.week_monday).eq("weekday", Number(c.weekday)));
+        if (!r.error) concluirOp("checks", ids[i], s[ids[i]]); else recusar("checks", ids[i], r.error);
       }
-      srv.lists[lid] = fpOf(enviadoL);
     }
 
-    // 9. itens novos ou alterados
-    var itPend = [];
-    Object.keys(want.items).forEach(function (id) {
-      var fp = fpOf(want.items[id]);
-      if (srv.items[id] !== fp) itPend.push([id, fp, want.items[id]]);
-    });
-    if (itPend.length) {
-      var ri = await gravarLinhas("list_items", itPend.map(function (p) { return p[2]; }));
-      if (ri.error) {
-        if (tabelaFaltando(ri.error)) { listasOk = false; return; }
-        throw ri.error;
+    // 1. perfil (nome, tema, avisos). No app de uma empresa nunca: são dela.
+    if (f.profile) {
+      if (ESPELHO) f.profile = null;
+      else {
+        var sp = copiaDe(f.profile);
+        f.profile.tentado = true;
+        var pc = semColunasFaltando("profile", sp.campos);
+        var rp = Object.keys(pc).length ? await pedir(db.from("profiles").update(pc).eq("id", uidv)) : { error: null };
+        if (rp.error && desligarColuna("profile", rp.error)) {
+          pc = semColunasFaltando("profile", pc);
+          rp = await pedir(db.from("profiles").update(pc).eq("id", uidv));
+        }
+        if (!rp.error) concluirOp("profile", null, sp); else recusar("profile", null, rp.error);
       }
-      itPend.forEach(function (p) { srv.items[p[0]] = p[1]; });
     }
 
-    // 10. itens removidos, e só então as listas removidas
-    var itGone = Object.keys(srv.items).filter(function (id) { return !aqui.items[id]; });
-    if (itGone.length) {
-      fail(await db.from("list_items").delete().in("id", itGone));
-      itGone.forEach(function (id) { delete srv.items[id]; });
+    // 2. abas, tarefas e marcações
+    await criar("cats", "categories", dono);
+    await alterar("cats", "categories");
+    await criar("tasks", "tasks", dono);
+    await alterar("tasks", "tasks");
+    await criar("checks", "task_checks", dono);
+    await apagarMarcacoes();
+    await apagar("tasks", "tasks");
+    await apagar("cats", "categories");
+
+    // 3. listas — UMA A UMA na criação: o banco recusa a sexta lista, e num
+    //    lote eu não saberia qual foi recusada.
+    if (listasOk) {
+      var passos = [
+        function () { return criar("lists", "lists", igual, true); },
+        function () { return alterar("lists", "lists"); },
+        function () { return criar("items", "list_items", igual); },
+        function () { return alterar("items", "list_items"); },
+        function () { return apagar("items", "list_items"); },
+        function () { return apagar("lists", "lists"); }
+      ];
+      for (var p1 = 0; p1 < passos.length; p1++) if ((await passos[p1]()) === "parar") break;
     }
 
-    var listGone = Object.keys(srv.lists).filter(function (id) { return !aqui.lists[id]; });
-    if (listGone.length) {
-      fail(await db.from("lists").delete().in("id", listGone));
-      listGone.forEach(function (id) { delete srv.lists[id]; });
+    // 4. agendas antes dos atendimentos (o atendimento aponta para elas)
+    if (agendaOk) {
+      var passosAg = [
+        function () { return criar("agendas", "agendas", igual, true); },
+        function () { return alterar("agendas", "agendas"); },
+        function () { return criar("appts", "appointments", igual); },
+        function () { return alterar("appts", "appointments"); },
+        function () { return apagar("appts", "appointments"); },
+        function () { return apagar("agendas", "agendas"); }
+      ];
+      for (var p2 = 0; p2 < passosAg.length; p2++) if ((await passosAg[p2]()) === "parar") break;
     }
 
-    if (!agendaOk) return;
+    if (recusas.length) avisarRecusas(recusas);
+  }
 
-    // 11a. agendas primeiro — o atendimento aponta para elas, então criar
-    //      um antes da agenda existir seria recusado pela chave estrangeira.
-    var agPend = [];
-    Object.keys(want.agendas).forEach(function (id) {
-      var fp = fpOf(want.agendas[id]);
-      if (srv.agendas[id] !== fp) agPend.push([id, fp, want.agendas[id]]);
-    });
-    for (var gi = 0; gi < agPend.length; gi++) {
-      var linhaG = agPend[gi][2];
-      if (!colunaCorAgenda) { linhaG = Object.assign({}, linhaG); delete linhaG.palette; }
-      // Guarda o que REALMENTE foi mandado (pode perder a cor no meio, se a
-      // coluna ainda não existir) — é essa versão que conta como "enviada",
-      // não a que a gente queria mandar. Gravar a versão desejada aqui fazia
-      // a cor se dar por enviada mesmo quando o banco recusou e ela nunca
-      // mais era tentada de novo: parecia sincronizado, mas nunca gravava.
-      var enviadoG = linhaG;
-      var rg = await gravarLinha("agendas", linhaG, !!srv.agendas[agPend[gi][0]]);
-      if (rg.error && colunaCorAgenda && tabelaFaltando(rg.error)) {
-        colunaCorAgenda = false;
-        enviadoG = Object.assign({}, linhaG); delete enviadoG.palette;
-        rg = await gravarLinha("agendas", enviadoG, !!srv.agendas[agPend[gi][0]]);
-      }
-      if (rg.error) {
-        if (tabelaFaltando(rg.error)) { agendaOk = false; return; }
-        // Teto de agendas estourado: tira a que o servidor recusou em vez de
-        // insistir para sempre numa linha que ele nunca vai aceitar.
-        if (rg.error.code === "P0001") { recusarAgenda(agPend[gi][0], rg.error.message); continue; }
-        throw rg.error;
-      }
-      srv.agendas[agPend[gi][0]] = fpOf(enviadoG);
-    }
-
-    // 11. atendimentos novos ou alterados
-    var apPend = [];
-    Object.keys(want.appts).forEach(function (id) {
-      var fp = fpOf(want.appts[id]);
-      if (srv.appts[id] !== fp) apPend.push([id, fp, want.appts[id]]);
-    });
-    if (apPend.length) {
-      var ra = await gravarLinhas("appointments", apPend.map(function (p) { return p[2]; }));
-      if (ra.error && colunaConfirmado && tabelaFaltando(ra.error)) {
-        // Banco ainda sem a coluna do confirmado: manda sem ela e segue.
-        colunaConfirmado = false;
-        ra = await gravarLinhas("appointments", apPend.map(function (p) {
-          var copia = Object.assign({}, p[2]);
-          delete copia.confirmed;
-          return copia;
-        }));
-      }
-      if (ra.error) {
-        if (tabelaFaltando(ra.error)) { agendaOk = false; return; }
-        throw ra.error;
-      }
-      apPend.forEach(function (p) { srv.appts[p[0]] = p[1]; });
-    }
-
-    // 12. atendimentos removidos, e só então as agendas removidas
-    var apGone = Object.keys(srv.appts).filter(function (id) { return !aqui.appts[id]; });
-    if (apGone.length) {
-      fail(await db.from("appointments").delete().in("id", apGone));
-      apGone.forEach(function (id) { delete srv.appts[id]; });
-    }
-
-    var agGone = Object.keys(srv.agendas).filter(function (id) { return !aqui.agendas[id]; });
-    if (agGone.length) {
-      fail(await db.from("agendas").delete().in("id", agGone));
-      agGone.forEach(function (id) { delete srv.agendas[id]; });
-    }
+  // Recusa do banco: a mudança sai da fila (tentar de novo daria o mesmo
+  // erro) e a pessoa fica sabendo. A tela se acerta na busca seguinte.
+  function avisarRecusas(recusas) {
+    console.warn("[checklist] o servidor recusou:", recusas.map(function (e) { return (e.code || "?") + " " + (e.message || ""); }));
+    var motivo = "";
+    if (recusas.some(function (e) { return e.code === "23503"; })) motivo = " Algo ligado a ela foi apagado em outro aparelho.";
+    else if (recusas.some(function (e) { return e.code === "42501"; })) motivo = " Você não tem mais permissão para mexer ali.";
+    showToast((recusas.length === 1 ? "Uma alteração não foi aceita pelo servidor." : recusas.length + " alterações não foram aceitas pelo servidor.") + motivo);
+    window.setTimeout(function () { maybePull(true); }, 1500);
   }
 
   // O banco recusou uma agenda (teto estourado). Ela não existe lá, então não
-  // pode continuar aqui fingindo que sim.
+  // pode continuar aqui fingindo que sim. Não é gesto da pessoa: não vira
+  // "apagar" no servidor.
   function recusarAgenda(gid, msg) {
+    var f = fila();
+    delete f.agendas[gid];
+    agenda().forEach(function (a) { if (a.agendaId === gid) delete f.appts[a.id]; });
     var g = agendaDe(gid);
     if (g) {
-      agenda().forEach(function (a) { if (a.agendaId === gid) delete state.srv.appts[a.id]; });
       state.agenda = agenda().filter(function (a) { return a.agendaId !== gid; });
       var i = agendas().indexOf(g);
       if (i >= 0) agendas().splice(i, 1);
       if (agendaSel === gid) agendaSel = null;
     }
-    delete state.srv.agendas[gid];
+    rebase();
     persistQuiet();
     showToast(msg || "O servidor não aceitou essa agenda.");
     render();
   }
 
-  // O banco recusou uma lista (limite estourado). Ela não existe lá, então não
-  // pode continuar existindo aqui fingindo que sim — sai da tela com aviso.
+  // Mesma coisa para a lista recusada (limite estourado).
   function recusarLista(lid, msg) {
+    var f = fila();
+    delete f.lists[lid];
     var l = listaDe(lid);
     if (l) {
-      (l.items || []).forEach(function (it) { delete state.srv.items[it.id]; });
+      (l.items || []).forEach(function (it) { delete f.items[it.id]; });
       var i = listas().indexOf(l);
       if (i >= 0) listas().splice(i, 1);
       if (listaAberta === lid) listaAberta = null;
     }
-    delete state.srv.lists[lid];
+    rebase();
     persistQuiet();
     showToast(msg || "O servidor não aceitou essa lista.");
     render();
@@ -5931,163 +6068,15 @@
     };
   }
 
-  /* ---------- a regra que impede a busca de apagar ----------
+  /* A leitura do servidor não preserva mais nada "por conta": o que a pessoa
+     fez aqui e ainda não subiu está na fila, e aplicarFila() põe por cima. */
 
-     Uma leitura NUNCA pode apagar uma escrita que ainda não subiu. Sem isto,
-     bastava o envio falhar uma vez — internet ruim, um erro no meio, uma
-     tabela que ainda não existia — para a próxima busca voltar vazia e levar
-     junto o que a pessoa tinha acabado de criar. Foi assim que dado sumiu.
-
-     A pergunta que separa "nunca subiu" de "foi apagado de propósito" é o
-     registro srv: se o id está lá, o servidor já teve essa linha e não tem
-     mais — foi apagada, e apagada fica. Se não está, ela nunca chegou lá, e
-     quem manda é a cópia daqui. ---------- */
-  function preservarNaoEnviados(doServidor, locais, registroSrv) {
-    var vieram = {};
-    doServidor.forEach(function (x) { vieram[x.id] = true; });
-    (locais || []).forEach(function (x) {
-      if (!x || vieram[x.id]) return;
-      if (registroSrv && registroSrv[x.id]) return;   // o servidor já teve e apagou
-      doServidor.push(x);
-    });
-    return doServidor;
-  }
-
-  /* ---------- a mesma regra para abas, tarefas e marcações (20/11/2026) ----------
-
-     Até a v38 só listas e agendas tinham a proteção acima. Abas, tarefas e
-     marcações eram trocadas inteiras pela cópia do servidor ao abrir o app —
-     e uma tarefa marcada que ainda não tinha subido (app fechado logo depois,
-     ou sem internet na hora) voltava desmarcada. Era o "marco como feita e
-     ela volta".
-
-     A pergunta é a mesma de sempre, feita ao registro srv deste aparelho:
-     - a linha daqui é igual ao que o servidor confirmou? Então não há nada
-       pendente e quem manda é o servidor (pode ter mudado noutro aparelho);
-     - é diferente, ou nunca subiu? Então é mudança daqui ainda não enviada,
-       e ela fica;
-     - o servidor já teve e não tem mais? Foi apagada noutro aparelho, e
-       apagada fica;
-     - está no registro e não está aqui? Foi apagada AQUI e ainda não lá:
-       continua apagada.
-     O que ficou pendente é anotado em mesclaPendente, para o
-     markServerClean saber que aquilo ainda precisa subir. ---------- */
-  var mesclaPendente = null;
-
-  function mesclarPendentes(st) {
-    var loc = state;                       // a cópia deste aparelho, antes da troca
-    var srvL = (loc && loc.srv) || {};
-    var sCats = srvL.cats || {}, sTasks = srvL.tasks || {}, sChecks = srvL.checks || {};
-    var rowsL = desiredRows();             // lê o state, que ainda é o daqui
-    var m = { srvAntes: { cats: sCats, tasks: sTasks },
-              cats: {}, catsApagadas: {}, tarefas: {}, tarefasApagadas: {},
-              checksNovos: {}, checksTirados: {} };
-    function tirar(lista, o) { var i = lista.indexOf(o); if (i >= 0) lista.splice(i, 1); }
-
-    // ---- abas ----
-    var catSrv = {};
-    st.categories.forEach(function (c) { catSrv[c.id] = c; });
-    var catsLocais = (loc && Array.isArray(loc.categories)) ? loc.categories : [];
-    var ordemLocal = {};
-    catsLocais.forEach(function (c, i) {
-      ordemLocal[c.id] = i;
-      if (sCats[c.id] === fpOf(rowsL.cats[c.id])) return;          // nada pendente
-      if (!catSrv[c.id] && sCats[c.id] !== undefined) return;       // apagada noutro aparelho
-      m.cats[c.id] = true;
-      if (catSrv[c.id]) {
-        catSrv[c.id].label = c.label;
-        catSrv[c.id].palette = c.palette;
-      } else {
-        catSrv[c.id] = { id: c.id, label: c.label, palette: c.palette };
-        st.categories.push(catSrv[c.id]);
-        st[c.id] = { schedule: [], projects: [] };
-      }
-    });
-    Object.keys(sCats).forEach(function (id) {
-      if (ordemLocal[id] !== undefined || !catSrv[id]) return;
-      m.catsApagadas[id] = true;                                   // apagada aqui, ainda não lá
-      st.categories = st.categories.filter(function (c) { return c.id !== id; });
-      delete st[id];
-    });
-    if (Object.keys(m.cats).length || Object.keys(m.catsApagadas).length) {
-      // Mudança de aba pendente inclui mudança de ordem: vale a ordem daqui, e
-      // as abas que só o servidor conhece (criadas noutro aparelho) vão ao fim.
-      st.categories.sort(function (a, b) {
-        var x = ordemLocal[a.id], y = ordemLocal[b.id];
-        if (x === undefined && y === undefined) return 0;
-        if (x === undefined) return 1;
-        if (y === undefined) return -1;
-        return x - y;
-      });
-    }
-
-    // ---- tarefas ----
-    function indexar(fonte, listaCats) {
-      var porId = {};
-      listaCats.forEach(function (c) {
-        var b = fonte[c.id];
-        if (!b) return;
-        (b.schedule || []).forEach(function (o) { porId[o.id] = { cat: c.id, lista: "schedule", o: o }; });
-        (b.projects || []).forEach(function (o) { porId[o.id] = { cat: c.id, lista: "projects", o: o }; });
-      });
-      return porId;
-    }
-    var tSrv = indexar(st, st.categories);
-    var tLoc = indexar(loc || {}, catsLocais);
-    Object.keys(tLoc).forEach(function (id) {
-      if (sTasks[id] === fpOf(rowsL.tasks[id])) return;            // nada pendente
-      var la = tSrv[id];
-      if (!la && sTasks[id] !== undefined) return;                  // apagada noutro aparelho
-      var L = tLoc[id];
-      if (!st[L.cat]) return;                                       // a aba dela não existe mais
-      m.tarefas[id] = true;
-      var copia = JSON.parse(JSON.stringify(L.o));
-      // As marcações vêm do servidor (podem ter chegado de outro aparelho);
-      // as pendentes daqui entram logo abaixo, uma a uma.
-      if (L.lista === "schedule") copia.doneMap = (la && la.o.doneMap) ? la.o.doneMap : {};
-      if (la) tirar(st[la.cat][la.lista], la.o);
-      st[L.cat][L.lista].push(copia);
-      tSrv[id] = { cat: L.cat, lista: L.lista, o: copia };
-    });
-    Object.keys(sTasks).forEach(function (id) {
-      if (tLoc[id] || !tSrv[id]) return;
-      m.tarefasApagadas[id] = true;                                 // apagada aqui, ainda não lá
-      tirar(st[tSrv[id].cat][tSrv[id].lista], tSrv[id].o);
-      delete tSrv[id];
-    });
-
-    // ---- marcações ----
-    Object.keys(rowsL.checks).forEach(function (k) {
-      if (sChecks[k]) return;                                       // o servidor já tinha
-      var c = rowsL.checks[k], alvo = tSrv[c.task_id];
-      if (!alvo || alvo.lista !== "schedule") return;               // a tarefa não existe mais
-      var dm = alvo.o.doneMap;
-      if (dm[c.week_monday] && dm[c.week_monday][c.weekday]) return;   // outro aparelho já marcou
-      if (!dm[c.week_monday]) dm[c.week_monday] = {};
-      dm[c.week_monday][c.weekday] = true;
-      m.checksNovos[k] = true;
-    });
-    Object.keys(sChecks).forEach(function (k) {
-      if (rowsL.checks[k]) return;                                  // continua marcada aqui
-      var p = k.split("|");
-      if (!tLoc[p[0]]) return;                                      // a tarefa saiu junto
-      var alvo = tSrv[p[0]];
-      if (!alvo || alvo.lista !== "schedule") return;
-      var dia = alvo.o.doneMap[p[1]];
-      if (!dia || !dia[p[2]]) return;                               // lá também já saiu
-      delete dia[p[2]];
-      m.checksTirados[k] = true;                                    // desmarcada aqui, ainda não lá
-    });
-
-    mesclaPendente = m;
-  }
-
-  // Reconstrói o formato que a tela usa a partir das linhas do banco.
-  // semMescla: a cópia deste aparelho não é desta conta (aparelho novo) e não
-  // tem nada a preservar.
-  function stateFromServer(d, semMescla) {
-    mesclaPendente = null;
+  // Reconstrói o formato que a tela usa a partir das linhas do banco. Quem
+  // chama passa a leitura já com a fila por cima (aplicarFila), e a fila deste
+  // aparelho segue junto no estado novo.
+  function stateFromServer(d) {
     var st = {
+      fila: (state && state.fila) || novaFila(),
       categories: d.cats.map(function (c) { return { id: c.id, label: c.label, palette: c.palette }; }),
       userName: (d.profile && d.profile.display_name) || "",
       theme: (d.profile && d.profile.theme) || null,
@@ -6135,8 +6124,6 @@
       it.doneMap[r.week_monday][r.weekday] = true;
     });
 
-    if (!semMescla) mesclarPendentes(st);
-
     st.categories.forEach(function (c) {
       st[c.id].schedule.sort(function (a, b) { return a.createdAt - b.createdAt; });
       st[c.id].projects.sort(function (a, b) { return a.createdAt - b.createdAt; });
@@ -6183,18 +6170,7 @@
         });
       });
 
-      var srvAntes = (state && state.srv) || {};
-      var listasLocais = (state && Array.isArray(state.lists)) ? state.lists : [];
-
-      // Listas criadas aqui que o servidor ainda não confirmou continuam vivas.
-      preservarNaoEnviados(st.lists, listasLocais, srvAntes.lists);
-
-      // O mesmo item a item: uma lista que já subiu pode ter ganhado itens
-      // depois, e uma busca no meio do caminho os apagaria.
-      var itensLocais = {};
-      listasLocais.forEach(function (l) { itensLocais[l.id] = l.items || []; });
       st.lists.forEach(function (l) {
-        preservarNaoEnviados(l.items, itensLocais[l.id], srvAntes.items);
         l.items.sort(function (a, b) { return a.createdAt - b.createdAt; });
       });
     } else {
@@ -6227,13 +6203,6 @@
           createdAt: Date.parse(r.created_at) || Date.now()
         };
       });
-
-      // Agendas criadas aqui que ainda não subiram continuam vivas. As de
-      // outras pessoas não entram nesta conta: se sumiram da busca, foi o dono
-      // que tirou o acesso — e aí têm mesmo que sumir.
-      var minhasLocais = ((state && Array.isArray(state.agendas)) ? state.agendas : [])
-        .filter(function (g) { return !g.ownerId || (currentUser && g.ownerId === currentUser.id); });
-      preservarNaoEnviados(st.agendas, minhasLocais, (state && state.srv && state.srv.agendas));
     } else {
       st.agendas = (state && Array.isArray(state.agendas)) ? state.agendas : [];
     }
@@ -6255,13 +6224,6 @@
         };
       });
 
-      // Atendimentos marcados aqui e ainda não enviados continuam vivos.
-      preservarNaoEnviados(
-        st.agenda,
-        (state && Array.isArray(state.agenda)) ? state.agenda : [],
-        (state && state.srv && state.srv.appts)
-      );
-
       // Sobra: atendimento de uma agenda que não existe mais (o dono tirou o
       // acesso, ou ela foi excluída). Não aparece em tela nem sobe para lugar
       // nenhum — ficaria só ocupando espaço para sempre. Os sem agenda ficam:
@@ -6279,9 +6241,11 @@
   }
 
   /* ---------- busca automática ----------
-     Nunca durante uma edição: um render no meio apagaria o que está sendo
-     digitado. E nunca com alteração local pendente: ela tem prioridade,
-     senão a busca desfaria o que acabou de ser feito. */
+     Nunca durante uma edição (um render no meio apagaria o que está sendo
+     digitado) nem durante um envio. Com mudança da pessoa esperando na fila
+     a busca PODE acontecer: a fila vai por cima do que veio, então nada do
+     que ela fez é desfeito, e o aparelho não fica surdo ao que os outros
+     mudam enquanto a internet está ruim. */
 
   // Fica em 1 minuto enquanto o tempo real não estiver confirmado funcionando:
   // assim o app nunca fica pior do que já era. Quando o canal avisa que está
@@ -6293,7 +6257,7 @@
 
   function pullBloqueado() {
     return !currentUser || editingId || itemEditando || atendEditando ||
-           formOpen || settingsOpen || localDirty || pushing;
+           formOpen || settingsOpen || pushing || semServidorAtivo;
   }
 
   function maybePull(force) {
@@ -6312,24 +6276,14 @@
       if (momento !== mudancasLocais + ":" + enviosFeitos) return;
 
       var anterior = state;
-      state = stateFromServer(d);
-      var want = desiredRows();
-      var igual = fpOf(want.profile) === anterior.srv.profile
-        && sameFps(want.cats, anterior.srv.cats)
-        && sameFps(want.tasks, anterior.srv.tasks)
-        && sameFps(want.checks, anterior.srv.checks, true)
-        && sameFps(want.lists, anterior.srv.lists || {})
-        && sameFps(want.items, anterior.srv.items || {})
-        && sameFps(want.appts, anterior.srv.appts || {})
-        && sameFps(want.agendas, anterior.srv.agendas || {})
-        // E o que é DOS OUTROS. Sem esta linha, uma agenda que alguém acabou
-        // de compartilhar não entrava na conta — o app concluía "nada mudou",
-        // descartava a busca inteira e a agenda compartilhada sumia da tela.
-        // Era o "tem hora que aparece, tem hora que não".
-        && fpDoQueEhDosOutros(state) === fpDoQueEhDosOutros(anterior);
-      if (igual) { state = anterior; mesclaPendente = null; return; }
+      // A assinatura inclui o que é DOS OUTROS (fpDoQueEhDosOutros): sem isso
+      // uma agenda que alguém acabou de compartilhar não contava como mudança
+      // e sumia da tela. Era o "tem hora que aparece, tem hora que não".
+      var antes = assinaturaDaTela();
+      state = stateFromServer(aplicarFila(d));
+      if (assinaturaDaTela() === antes) { state = anterior; return; }
 
-      markServerClean(d);
+      rebase();
       persistQuiet();
       applyTheme();
       render();
@@ -6342,7 +6296,7 @@
   window.addEventListener("focus", function () { maybePull(true); });
   // A internet voltou: o que ficou pendente sobe já, sem esperar a próxima
   // tentativa marcada.
-  window.addEventListener("online", function () { if (localDirty) schedulePush(); });
+  window.addEventListener("online", function () { if (filaTamanho()) schedulePush(); });
 
   // O ritmo da rede de segurança é uma variável, não um intervalo fixo: ele
   // afrouxa sozinho quando o tempo real prova que está entregando.
@@ -6543,6 +6497,31 @@
     return (err && err.message) ? err.message : "Não deu para concluir. Tente de novo.";
   }
 
+  // Aparelho sem cópia desta conta e servidor sem responder: não há o que
+  // mostrar, e inventar um app vazio aqui seria gravar abas padrão por cima
+  // das da pessoa quando a rede voltasse. Espera e tenta de novo.
+  var semServidorAtivo = false;
+  var esperaTimer = null;
+  function esperarServidor(user) {
+    semServidorAtivo = true;
+    hideAuth();
+    elGreet.textContent = "Sem conexão";
+    elSub.textContent = "Não deu para falar com o servidor. Tentando de novo…";
+    elBody.innerHTML = "";
+    var b = el("button", "minibtn", "Tentar agora");
+    b.type = "button";
+    function tentar() {
+      window.clearTimeout(esperaTimer);
+      if (!semServidorAtivo) return;
+      b.disabled = true;
+      startSession(user);
+    }
+    b.addEventListener("click", tentar);
+    elBody.appendChild(b);
+    window.clearTimeout(esperaTimer);
+    esperaTimer = window.setTimeout(tentar, 5000);
+  }
+
   // Monta o app para uma conta: decide de onde vêm os dados e liga o sincronismo.
   async function startSession(user) {
     currentUser = user;
@@ -6553,38 +6532,36 @@
 
     var temLocal = !!localStorage.getItem(STORAGE_KEY);
     state = temLocal ? load() : ensureShape(defaultState());
+    // Aparelho que vinha da v39: o registro antigo vira fila (só o que dá
+    // para afirmar que foi feito aqui).
+    if (temLocal) migrarRegistroAntigo();
+    semServidorAtivo = false;
 
     var servidor = null;
     try { servidor = await pullOnce(); } catch (e) { servidor = null; }
 
-    // A primeira checagem é por TAREFAS, não por abas, de propósito: uma conta
-    // criada num aparelho vazio nasce com as abas padrão e nenhuma tarefa. Se
-    // o teste fosse por abas, entrar depois no computador onde as tarefas de
-    // verdade estão faria esse servidor "vazio" vencer e elas se perderiam.
-    var doAparelho = temLocal ? null : readDeviceState();
-
-    if (servidor && servidor.tasks.length) {
-      // A conta já tem conteúdo: o servidor é a verdade, menos no que foi
-      // feito AQUI e ainda não subiu (ver mesclarPendentes). Sem cópia local
-      // desta conta não há o que preservar.
-      state = stateFromServer(servidor, !temLocal);
-      markServerClean(servidor);
-    } else if (doAparelho) {
-      // Conta sem tarefas e este navegador tinha um checklist de antes das
-      // contas: ele sobe em vez de se perder. É a migração única.
-      state = doAparelho;
-      markServerEmpty();
-    } else if (servidor && servidor.cats.length) {
-      // Conta sem tarefas mas com abas já criadas noutro aparelho: aproveita.
-      state = stateFromServer(servidor, !temLocal);
-      markServerClean(servidor);
-    } else if (!temLocal) {
-      // Conta nova e aparelho sem nada: começa do zero, com as abas padrão.
-      state = ensureShape(defaultState());
-      markServerEmpty();
+    // A REGRA DA ABERTURA (23/11/2026): leitura que falhou não é "servidor
+    // vazio". Até a v39, uma busca que falhava num pedido só fazia o app
+    // reenviar a cópia inteira do aparelho por cima do servidor. Agora, sem
+    // leitura completa, nada é decidido nem enviado além da fila.
+    var contaNova = false;
+    if (!servidor) {
+      if (!temLocal) { esperarServidor(user); return; }
+      // Mostra a cópia do aparelho como está e tenta ler de novo em seguida.
+      [3000, 10000, 30000].forEach(function (ms) {
+        window.setTimeout(function () { maybePull(true); }, ms);
+      });
+    } else if (!servidor.tasks.length && !servidor.cats.length && !Object.keys(fila().cats).length) {
+      // A leitura deu certo e a conta não tem NADA: é conta nova. O que está no
+      // aparelho (a aba padrão de quem acabou de se cadastrar, ou o checklist
+      // de antes das contas) é da própria pessoa e sobe como criação.
+      var doAparelho = temLocal ? null : readDeviceState();
+      if (doAparelho) state = doAparelho;
+      else if (!temLocal) state = ensureShape(defaultState());
+      contaNova = true;
     } else {
-      // Havia cópia local desta conta, mas o servidor está vazio ou fora do ar.
-      markServerEmpty();
+      // O servidor é a verdade, mais o que a pessoa fez aqui e ainda não subiu.
+      state = stateFromServer(aplicarFila(servidor));
     }
 
     // A limpeza geral (HARD_RESET) é uma ferramenta de desenvolvimento e não
@@ -6593,12 +6570,18 @@
     state.hardResetVersion = HARD_RESET_VERSION;
     seedChanged = applySeedUpdates(state);
 
+    // A foto de partida: tudo o que está na tela agora já está no servidor
+    // (ou na fila). Conta nova parte do zero, então tudo vira criação.
+    if (contaNova) { baseLinhas = linhasVazias(); registrarMudancas(); }
+    else rebase();
+
     persistQuiet();
     hideAuth();
     applyTheme();
     render();
     if (seedChanged) showToast("Cronograma atualizado.");
     lastPullAt = Date.now();
+    localDirty = filaTamanho() > 0;
     if (localDirty) schedulePush();
     ligarTempoReal();
     lerEstadoPush();
@@ -7166,14 +7149,14 @@
     STORAGE_KEY = "checklist_e_" + ESPELHO;
     var temLocal = !!localStorage.getItem(STORAGE_KEY);
     state = temLocal ? load() : ensureShape(defaultState());
+    if (temLocal) migrarRegistroAntigo();
 
     var servidor = null;
     try { servidor = await pullOnce(); } catch (e) { servidor = null; }
     if (saindoDoEspelho) return;
 
     if (servidor) {
-      state = stateFromServer(servidor, !temLocal);
-      markServerClean(servidor);
+      state = stateFromServer(aplicarFila(servidor));
     } else if (!temLocal) {
       // Sem servidor e sem cópia: não há o que mostrar, e criar um app vazio
       // aqui seria enviar abas padrão por cima das dela quando a rede voltar.
@@ -7187,6 +7170,7 @@
     state.hardResetVersion = HARD_RESET_VERSION;
     state.seedVersion = SEED_VERSION;
 
+    rebase();
     persistQuiet();
     hideAuth();
     montarFaixaEspelho();
@@ -7194,7 +7178,9 @@
     render();
     lastPullAt = Date.now();
     pullRitmo = PULL_ESPELHO_MS;
+    localDirty = filaTamanho() > 0;
     if (localDirty) schedulePush();
+    if (!servidor) window.setTimeout(function () { maybePull(true); }, 3000);
   }
 
   function falhaDoEspelho() {
@@ -7599,7 +7585,7 @@
 
     if (abas.length) {
       if (vazia) {
-        cats().forEach(function (c) { delete state[c.id]; });
+        cats().forEach(function (c) { delete state[c.id]; autorizarRemocao("cats", c.id); });
         state.categories = [];
       }
       var tem = {};
@@ -7617,6 +7603,7 @@
     if (ags.length && agendaOk) {
       if (vazia) {
         // A "Agenda" vazia que o app cria sozinho dá lugar às da empresa.
+        agendas().forEach(function (g) { if (ehMinha(g) && g.title === "Agenda") autorizarRemocao("agendas", g.id); });
         state.agendas = agendas().filter(function (g) { return !(ehMinha(g) && g.title === "Agenda"); });
       }
       var temAg = {};
